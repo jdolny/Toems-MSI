@@ -1,0 +1,1 @@
+The folder structure of the tftpboot directory must not be changed or CloneDeploy may not work properly.
