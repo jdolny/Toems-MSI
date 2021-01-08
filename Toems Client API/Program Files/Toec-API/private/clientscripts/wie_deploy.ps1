@@ -120,9 +120,19 @@ function Process-Partitions()
                  
         Download-Image
         
+        if($before_file_scripts.trim("`""))
+        {
+            Process-Scripts "$before_file_scripts"
+        }
+
         if($file_copy -eq "True")
         {
             Process-File-Copy
+        }
+
+        if($after_file_scripts.trim("`""))
+        {
+            Process-Scripts "$after_file_scripts"
         }
 
         if(Test-Path c:\Windows)
@@ -175,8 +185,8 @@ function Download-Image()
     
      if($script:task -eq "multicast" -or $script:task -eq "ondmulticast" )
     {
-        log "udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
-        $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
+        log "udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
+        $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
         Start-Sleep 5
         $wimProc=$(Get-Process wimlib-imagex)
         Wait-Process $wimProc.Id
@@ -192,12 +202,15 @@ function Download-Image()
             $wimSource=$currentPartition.Number
         }
 
-        log "wimapply $script:imagePath\part$wimSource.winpe.wim C: 2>>$clientLog > x:\wim.progress"
-        wimapply $script:imagePath\part$wimSource.winpe.wim C: 2>>$clientLog > x:\wim.progress
+        log "curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data ""profileId=$profile_id&hdNumber=$($hardDrive.Number)&fileName=part$wimSource.winpe.wim"" ${script:web}GetImagingFile | wimapply - 1 C:"
+        $udpProc=$(Start-Process cmd "/c curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data ""profileId=$profile_id&hdNumber=$($hardDrive.Number)&fileName=part$wimSource.winpe.wim"" ${script:web}GetImagingFile | wimapply - 1 C: 2>>$clientLog > x:\wim.progress" -NoNewWindow -PassThru)
+        Start-Sleep 5
+        $wimProc=$(Get-Process wimlib-imagex)
+        Wait-Process $wimProc.Id 2>&1 > $null
     }
     
     Start-Sleep 5
-    Stop-Process $reporterProc
+    Stop-Process $reporterProc 2>&1 > $null
     
 }
 
@@ -247,20 +260,16 @@ function Process-File-Copy()
         {
             if(($file.DestinationPartition -eq $currentPartition.Number) -or $partition_method -eq "standard" )
             {
-                if(Test-Path "s:\resources\$($file.SourcePath)" -PathType Leaf)
+                $dest=$($file.DestinationFolder).Replace("/","\")
+                mkdir c:$dest 2>&1 > $null
+                log "Downloading $($file.FileName) To $dest" "true"
+           
+                curl.exe -#Sk -H Authorization:$script:userTokenEncoded --data "guid=$($file.ModuleGuid)&fileName=$($file.FileName)" ${script:web}GetFile --connect-timeout 10 -o "c:$dest\$($file.FileName)"
+
+                if($($file.Unzip) -eq "true" -and $file.FileName.EndsWith('.zip'))
                 {
-                    Copy-Item -Path "s:\resources\$($file.SourcePath)" -Destination "c:\$($file.DestinationFolder)" -Force
-                }
-                else
-                {
-                    if($file.FolderCopyType -eq "Folder")
-                    {
-                        Copy-Item -Path "s:\resources\$($file.SourcePath)" -Destination "c:\$($file.DestinationFolder)" -Recurse -Force
-                    }
-                    else
-                    {
-                        Copy-Item -Path "s:\resources\$($file.SourcePath)\*" -Destination "c:\$($file.DestinationFolder)" -Recurse -Force
-                    }
+                    Expand-Archive -Path "c:$dest\$($file.FileName)" -DestinationPath "c:$dest"
+                    rm "c:$dest\$($file.FileName)"
                 }
             }
         }
@@ -313,6 +322,11 @@ function Process-Hard-Drives()
     {
         log " ** Processing Hard Drive $($hardDrive.Number)" "true"
         $currentHdNumber++
+
+        if($pre_scripts.trim("`""))
+        {
+	        Process-Scripts "$pre_scripts"
+        }
 
         log "Get hd_schema:  profileId=$profile_id&clientHdNumber=$currentHdNumber&newHdSize=$($hardDrive.Size)&schemaHds=$script:imagedSchemaDrives&clientLbs=0"
         $script:hdSchema=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id&clientHdNumber=$currentHdNumber&newHdSize=$($hardDrive.Size)&schemaHds=$script:imaged_schema_drives&clientLbs=$($hardDrive.LogicalSectorSize)" ${script:web}CheckHdRequirements --connect-timeout 10 --stderr -)
@@ -381,12 +395,6 @@ function Process-Hard-Drives()
 
   Start-Sleep 2
 
-  if($pre_scripts.trim("`""))
-  {
-	Process-Scripts "$pre_scripts"
-  }
-	
-Mount-SMB
 
  if($file_copy -eq "True")
     {
@@ -406,9 +414,6 @@ Mount-SMB
 
 Process-Hard-Drives
 
-if($post_scripts.trim("`""))
-{
-    Process-Scripts "$post_scripts"
-}
+
 
 CheckOut

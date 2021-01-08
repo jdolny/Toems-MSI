@@ -243,10 +243,12 @@ else
 
 if($script:task -eq "upload" -or $script:task -eq "unregupload" -or $script:task -eq "ondupload")
 {
+    Clear-Host
   . x:\wie_upload.ps1
 }
 elseif($script:task -eq "deploy" -or $script:task -eq "permanentdeploy" -or $script:task -eq "multicast" -or $script:task -eq "ondmulticast" -or $script:task -eq "unregdeploy" -or $script:task -eq "onddeploy" -or $script:task -eq "clobber" -or $script:task -eq "modelmatchdeploy")
 {
+    Clear-Host
   . x:\wie_deploy.ps1
 }
 else
