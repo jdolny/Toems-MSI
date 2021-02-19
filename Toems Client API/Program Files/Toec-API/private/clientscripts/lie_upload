@@ -313,9 +313,9 @@ function create_image_schema()
         fsid=$(sfdisk --part-type $hard_drive $partition_number | sed 's/ //g' 2>> $CLIENT_LOG)
       else
         fsid=$(gdisk $hard_drive -l 2>> $CLIENT_LOG | grep " $partition_number " | awk '/^ / {print $6}')
-        #find any matching boot entry in the nvram for this partition.  Find them all incase of multiboot systems
+        #find any matching boot entry in the nvram for this partition.  Find only the first, if there are more than 1 they will be ignored
 		efi_bootloader="";efi_bootloader_name="";efi_bootlmgr_id="";efi_boot_info="";
-		efi_bootloader=$(efibootmgr -v | grep -i "$partition_guid" | grep -o "File(\\\\.*)" | cut -d "(" -f2 | cut -d ")" -f1 | uniq | sed 's/\\/\\\\/g')
+		efi_bootloader=$(efibootmgr -v | grep -i "$partition_guid" | grep -o "File(\\\\.*)" | cut -d "(" -f2 | cut -d ")" -f1 | uniq | sed 's/\\/\\\\/g' | head -n1)
 		if [ -n "$efi_bootloader" ]; then
 	      efi_bootmgr_id=$(efibootmgr -v | grep -i "$partition_guid" | cut -d* -f1)
 		  efi_bootloader_name=$(efibootmgr | grep -i "$efi_bootmgr_id" | cut -d* -f2)
