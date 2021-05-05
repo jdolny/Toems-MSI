@@ -66,15 +66,26 @@ function save_mbr_gpt()
     
 	dd_drive_name=$(echo $hard_drive | cut -d "/" -f 3)
     dd_lbs=$(cat /sys/block/$dd_drive_name/queue/logical_block_size)
-    dd if=$hard_drive of=/tmp/table count=$toSave bs=$dd_lbs &>> $CLIENT_LOG
+    
 	
-	mbrResult=$($curlAuth -FprofileId="$profile_id" -FhdNumber=$"$current_hd_number" -F "data=@/tmp/table" "${web}UploadMbr" $curlEnd)
+	if [ "$direct_smb" = "true" ]; then
+	  dd if=$hard_drive of=/storage/images/$image_name/hd${current_hd_number}/table count=$toSave bs=$dd_lbs &>> $CLIENT_LOG
+	  if [ -s "/storage/images/$image_name/hd${current_hd_number}/table" ]; then
+        log " ...... Success" "display"
+      else
+        error "Could Not Save MBR /GPT .  Check Permissions."
+      fi
+	else
+	  dd if=$hard_drive of=/tmp/table count=$toSave bs=$dd_lbs &>> $CLIENT_LOG
+	  mbrResult=$($curlAuth -FprofileId="$profile_id" -FhdNumber=$"$current_hd_number" -F "data=@/tmp/table" "${web}UploadMbr" $curlEnd)
+	  if [ "$mbrResult" = "true" ]; then
+        log " ...... Success" "display"
+      else
+        error "Could Not Save MBR /GPT."
+      fi
+	fi
 	
-    if [ "$mbrResult" = "true" ]; then
-      log " ...... Success" "display"
-    else
-      error "Could Not Save MBR /GPT."
-    fi
+   
   
   echo
   sleep 5
@@ -221,6 +232,10 @@ function create_image_schema()
   if [ "$upload_schema_only" != "true" ]; then
     log " ** Removing All Files For Existing Image: $image_name ** "
     $curlAuth --data "profileId=$profile_id" "${web}DeleteImage" $curlEnd
+  fi
+  
+  if [ "$direct_smb" = "true" ]; then
+      mkdir -p /storage/images/$image_name
   fi
   
   clear_and_move_down
@@ -506,12 +521,15 @@ function create_image_schema()
   echo
   sleep 2 
   
-  schemaSaveResult=$($curlAuth --data "profileId=$profile_id&schema=$image_schema" "${web}SaveImageSchema" $curlEnd)
-  
-  if [ "$schemaSaveResult" != "true" ]; then
-	error "Could Not Save Image Schema"
+  if [ "$direct_smb" = "true" ]; then
+    echo $image_schema > /storage/images/$image_name/schema
+  else
+    schemaSaveResult=$($curlAuth --data "profileId=$profile_id&schema=$image_schema" "${web}SaveImageSchema" $curlEnd)
+    if [ "$schemaSaveResult" != "true" ]; then
+	  error "Could Not Save Image Schema"
+    fi
   fi
-  
+ 
   if [ "$upload_schema_only" = "true" ]; then
     checkout
   fi
@@ -532,7 +550,24 @@ function upload_image()
   local wim_arguments
   local partclone_out
   
-  if [ "$compression_algorithm" = "lz4" ]; then
+  if [ "$direct_smb" = "true" ]; then
+     if [ "$compression_algorithm" = "lz4" ]; then
+      compression_extension="lz4"
+	  partclone_out=" | "
+	  compression_out="lz4 $compression_level -c >"
+    elif [ "$compression_algorithm" = "gzip" ]; then
+      compression_extension="gz"
+	   partclone_out=" | "
+	   compression_out="gzip $compression_level -c >"
+	elif [ "$compression_algorithm" = "none" ]; then
+	  compression_extension="uncp"
+	   partclone_out="-o"
+	   compression_out=""
+    else
+      error "Could Not Determine Current Compression Algorithm: $compression_algorithm"
+    fi
+  else
+    if [ "$compression_algorithm" = "lz4" ]; then
       compression_extension="lz4"
 	  compression_out="lz4 $compression_level -c "
     elif [ "$compression_algorithm" = "gzip" ]; then
@@ -543,6 +578,7 @@ function upload_image()
 	   compression_out=""
     else
       error "Could Not Determine Current Compression Algorithm: $compression_algorithm"
+    fi
   fi
      
   for partition in $partitions; do 
@@ -610,37 +646,64 @@ function upload_image()
 	if [ "$image_type" = "File" ]; then
 	  compression_extension="wim"
 	fi
-	log " ** Preparing Client Com Imaging Server For Upload ** " "display"
-	upload_port=$($curlAuth --data "taskId=$task_id&fileName=$output_name.$partclone_type.$compression_extension&profileId=$profile_id&userId=$user_id&hdNumber=$current_hd_number" "${web}PrepareServerUpload" $curlEnd)
-	if [ "$upload_port" = "0" ]; then
-	  error "Could Not Start Server Image Receiver"
-	fi
 	
-    if [ "$image_type" = "File" ] && [ -n "$wim_arguments" ]; then
-	  export WIMLIB_IMAGEX_USE_UTF8=1
-	  if [ "$filesystem_type" = "ntfs" ]; then
-	    wimsource="$partition"   
-	  else
-	    mkdir -p /mnt/wimsource 2>> $CLIENT_LOG
-	    mount $partition /mnt/wimsource 2> /dev/null
-		wimsource="/mnt/wimsource"
-      fi 	  
-
-	  log " ......  wimlib-imagex capture $wimsource - --pipable --compress=fast | udp-sender --portbase $upload_port  --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 "
-	   wimlib-imagex capture $wimsource - --pipable --compress=fast | udp-sender --portbase $upload_port  --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 
-
-	  umount /mnt/wimsource &> /dev/null
-    else
-	  touch /tmp/clone.progress
-	  cd /
-	  log " ..... lie_reporter $task_id partclone & partclone.$partclone_type -B -c -s $partition | $compression_out | udp-sender --portbase $upload_port --no-progress --pointopoint --mcast-rdv-address $upload_server --min-receivers 1 "
-
-	  lie_reporter $task_id partclone & partclone.$partclone_type -B -c -s $partition | $compression_out | udp-sender --portbase $upload_port --no-progress --pointopoint --mcast-rdv-address $upload_server --min-receivers 1 
-      rm /tmp/clone.progress
-      cat /var/log/partclone.log >> $CLIENT_LOG
-	fi
+	if [ "$direct_smb" = "true" ]; then
+	  if [ "$image_type" = "File" ] && [ -n "$wim_arguments" ]; then
+	    export WIMLIB_IMAGEX_USE_UTF8=1
+	    if [ "$filesystem_type" = "ntfs" ]; then
+	      wimsource="$partition"   
+	    else
+	      mkdir -p /mnt/wimsource 2>> $CLIENT_LOG
+	      mount $partition /mnt/wimsource 2> /dev/null
+		  wimsource="/mnt/wimsource"
+        fi 	  
+	    touch /tmp/wim.progress
+	    log " ...... lie_reporter $task_id wim & wimlib-imagex capture $wimsource $image_path/$output_name.$partclone_type.wim $wim_arguments --compress=fast 2>> $CLIENT_LOG | tee /tmp/wim.progress"
+	    eval "lie_reporter $task_id wim & wimlib-imagex capture $wimsource $image_path/$output_name.$partclone_type.wim $wim_arguments --compress=fast 2>> $CLIENT_LOG | tee /tmp/wim.progress"
+	    rm /tmp/wim.progress
+	    umount /mnt/wimsource &> /dev/null
+      else
+	    touch /tmp/clone.progress
+	    cd /
+	    log " ...... lie_reporter $task_id partclone & partclone.$partclone_type -B -c -s $partition $partclone_out $compression_out $image_path/$output_name.$partclone_type.$compression_extension"    
+	    eval "lie_reporter $task_id partclone & partclone.$partclone_type -B -c -s $partition $partclone_out $compression_out $image_path/$output_name.$partclone_type.$compression_extension"
+        rm /tmp/clone.progress
+        cat /var/log/partclone.log >> $CLIENT_LOG
+	    cd $image_path
+	  fi
+	else
+	  log " ** Preparing Client Com Imaging Server For Upload ** " "display"
+	  upload_port=$($curlAuth --data "taskId=$task_id&fileName=$output_name.$partclone_type.$compression_extension&profileId=$profile_id&userId=$user_id&hdNumber=$current_hd_number" "${web}PrepareServerUpload" $curlEnd)
+	  if [ "$upload_port" = "0" ]; then
+	    error "Could Not Start Server Image Receiver"
+	  fi
 	
-	session_closed=$($curlAuth --data "taskId=$task_id&port=$upload_port" "${web}CloseServerUpload" $curlEnd)
+      if [ "$image_type" = "File" ] && [ -n "$wim_arguments" ]; then
+	    export WIMLIB_IMAGEX_USE_UTF8=1
+	    if [ "$filesystem_type" = "ntfs" ]; then
+	      wimsource="$partition"   
+	    else
+	      mkdir -p /mnt/wimsource 2>> $CLIENT_LOG
+	      mount $partition /mnt/wimsource 2> /dev/null
+		  wimsource="/mnt/wimsource"
+        fi 	  
+
+	    log " ......  wimlib-imagex capture $wimsource - --pipable --compress=fast | udp-sender --portbase $upload_port  --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 "
+	    wimlib-imagex capture $wimsource - --pipable --compress=fast | udp-sender --portbase $upload_port  --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 
+
+	    umount /mnt/wimsource &> /dev/null
+      else
+	    touch /tmp/clone.progress
+	    cd /
+	    log " ..... lie_reporter $task_id partclone & partclone.$partclone_type -B -c -s $partition | $compression_out | udp-sender --portbase $upload_port --no-progress --pointopoint --mcast-rdv-address $upload_server --min-receivers 1 "
+
+	    lie_reporter $task_id partclone & partclone.$partclone_type -B -c -s $partition | $compression_out | udp-sender --portbase $upload_port --no-progress --pointopoint --mcast-rdv-address $upload_server --min-receivers 1 
+        rm /tmp/clone.progress
+        cat /var/log/partclone.log >> $CLIENT_LOG
+	  fi
+	
+	  session_closed=$($curlAuth --data "taskId=$task_id&port=$upload_port" "${web}CloseServerUpload" $curlEnd)
+	fi
   done
 }
 
@@ -651,6 +714,11 @@ function process_hard_drives()
   current_hd_number=-1
   for hard_drive in $hard_drives; do
     current_hd_number=$(( $current_hd_number + 1 ))
+	
+	if [ "$direct_smb" = "true" ]; then
+	  image_path=/storage/images/$image_name/hd$current_hd_number
+	  mkdir $image_path 2>> $CLIENT_LOG
+    fi
 	
     save_mbr_gpt
   
@@ -681,7 +749,12 @@ function process_hard_drives()
 
   done
 
-  image_guid=$($curlAuth --data "profileId=$profile_id" "${web}UpdateGuid" $curlEnd)
+  if [ "$direct_smb" = "true" ]; then
+    echo $image_guid > /storage/images/$image_name/guid
+  else
+    image_guid=$($curlAuth --data "profileId=$profile_id" "${web}UpdateGuid" $curlEnd)
+  fi
+
   
   log " shrunk_volumes: $shrunk_volumes"
   for shrunk_volume in $shrunk_volumes; do
@@ -697,6 +770,10 @@ function main()
   checkin
   
   verify_image_server
+  
+  if [ "$direct_smb" = "true" ]; then
+    mount_smb
+  fi
   
   get_hard_drives "upload"
 

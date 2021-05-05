@@ -537,3 +537,55 @@ function verify_image_server()
   fi
 }
 
+function mount_smb()
+{
+	local mount_result
+	local all_cluster_dps
+	local result
+	
+	log " ** Mounting SMB Share **" "display"
+	mkdir /storage &>> $CLIENT_LOG
+	smbInfo=$($curlAuth "${web}GetSmbShare" $curlEnd)
+	log " ...... Connecting To $(parse_json "$smbInfo" .SharePath)" "display"
+	if [ "smb_debug" = "1" ]; then
+	  log "$smbInfo"
+	fi
+	
+	mount_result=$(mount_smb_sub "$smbInfo")
+	if [ "$mount_result" = "true" ]; then
+	  log " ...... Success" "display"
+	else
+	   error "Could Not Mount SMB Share."
+	fi
+	
+	echo
+	sleep 2
+}
+
+function mount_smb_sub()
+{
+	local smbInfo=$1
+	
+	for smbVersion in 3.0 2.1 2.0 1.0; do	
+		if [ -z "$(parse_json "$smbInfo" .Domain)" ]; then
+		  mount -t cifs "$(parse_json "$smbInfo" .SharePath)" /storage -o user="$(parse_json "$smbInfo" .Username)",pass="$(parse_json "$smbInfo" .Password)",vers=$smbVersion 2>/tmp/mntstat
+		else
+		  mount -t cifs "$(parse_json "$smbInfo" .SharePath)" /storage -o user="$(parse_json "$smbInfo" .Username)",pass="$(parse_json "$smbInfo" .Password)",dom="$(parse_json "$smbInfo" .Domain)",vers=$smbVersion 2>/tmp/mntstat
+		fi
+		
+		if [ ! $? = "0" ]; then
+			cat /tmp/mntstat >> $CLIENT_LOG
+			errormsg=$(cat /tmp/mntstat)
+		else
+			echo "true"
+			
+			break
+		fi
+		
+		if [ "$smbVersion" = "1.0" ]; then
+			log " ...... Could Not Mount SMB Share" "display"
+			echo "false"
+		fi
+	done
+}
+

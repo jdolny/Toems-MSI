@@ -70,14 +70,20 @@ function Create-Image-Schema()
     $imageSchema="$imageSchema$completeHdJson"
     log " ...... imageSchema: $imageSchema"  
    
-    
-    $Bytes = [System.Text.Encoding]::UTF8.GetBytes($imageSchema)
-    $encodedSchema =[Convert]::ToBase64String($Bytes)
-
-    $schemaSaveResult=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id&schema=$encodedSchema" ${script:web}SaveImageSchemaPE  --connect-timeout 10 --stderr -)
-    if(!$?)
+    if($direct_smb -eq "true")
     {
-        error "Could Not Save Image Schema"
+        Add-Content s:\images\$image_name\schema $imageSchema
+    }
+    else
+    {
+        $Bytes = [System.Text.Encoding]::UTF8.GetBytes($imageSchema)
+        $encodedSchema =[Convert]::ToBase64String($Bytes)
+
+        $schemaSaveResult=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id&schema=$encodedSchema" ${script:web}SaveImageSchemaPE  --connect-timeout 10 --stderr -)
+        if(!$?)
+        {
+            error "Could Not Save Image Schema"
+        }
     }
 
     log " ...... Success" "true"
@@ -89,61 +95,114 @@ function Create-Image-Schema()
 function Upload-Image()
 {
     $currentHdNumber=-1
-     foreach($hardDrive in $script:HardDrives)
-     {
-        $currentHdNumber++
 
-        foreach($partition in Get-Partition -DiskNumber $hardDrive.Number | Sort-Object PartitionNumber)
+    if($direct_smb -eq "true")
+    {
+        foreach($hardDrive in $script:HardDrives)
         {
-            Clear-Host
-            log " ** Starting Image Upload For Hard Drive $($hardDrive.Number) Partition $($partition.PartitionNumber)" "true"
-            Write-Host
+            $currentHdNumber++
+            $imagePath="s:\images\$image_name\hd$currentHdNumber"
+            mkdir "$imagePath" >> $clientLog
 
-            $notAutoMounted=$false
-            $partitionCounter++
-            if(!$partition.DriveLetter)
+            foreach($partition in Get-Partition -DiskNumber $hardDrive.Number | Sort-Object PartitionNumber)
             {
-                $notAutoMounted=$true
-                Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter Q 2>>$clientLog
-            }
-            $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
+                log " ** Starting Image Upload For Hard Drive $($hardDrive.Number) Partition $($partition.PartitionNumber)" "true"
 
-            if($updatedPartition.Type -eq "Reserved") { continue }
-            if(!$updatedPartition.DriveLetter) { continue }
+                $notAutoMounted=$false
+                $partitionCounter++
+                if(!$partition.DriveLetter)
+                {
+                    $notAutoMounted=$true
+                    Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter Q 2>>$clientLog
+                }
+                $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
+
+                if(!$updatedPartition.DriveLetter) { continue }
+            
+             
+	      
+                log "curl.exe  --data `"taskId=$script:taskId&partition=$($partition.PartitionNumber)`" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -"
+                curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId&partition=$($partition.PartitionNumber)" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -
+            
+                Start-Sleep 7
+                Write-Host
+    
+                log " ...... partitionNumber: $($partition.PartitionNumber)"
+
+                $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($partition.PartitionNumber) -direction Uploading -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded " -NoNewWindow -PassThru)
+            
+                log "wimcapture $($updatedPartition.DriveLetter):\ $imagePath\part$($partition.PartitionNumber).winpe.wim $web_wim_args --compress=fast 2>>$clientLog > x:\wim.progress"
+                wimcapture "$($updatedPartition.DriveLetter):\" "$imagePath\part$($partition.PartitionNumber).winpe.wim" $web_wim_args --compress=fast 2>>$clientLog > x:\wim.progress
+            
+                Stop-Process $reporterProc
+            
+                if($notAutoMounted)
+                {
+                    mountvol.exe q:\ /d
+                }
+            }
+        }
+    }
+    else
+    {
+        foreach($hardDrive in $script:HardDrives)
+        {
+            $currentHdNumber++
+
+            foreach($partition in Get-Partition -DiskNumber $hardDrive.Number | Sort-Object PartitionNumber)
+            {
+                Clear-Host
+                log " ** Starting Image Upload For Hard Drive $($hardDrive.Number) Partition $($partition.PartitionNumber)" "true"
+                Write-Host
+
+                $notAutoMounted=$false
+                $partitionCounter++
+                if(!$partition.DriveLetter)
+                {
+                    $notAutoMounted=$true
+                    Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter Q 2>>$clientLog
+                }
+                $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
+
+                if($updatedPartition.Type -eq "Reserved") { continue }
+                if(!$updatedPartition.DriveLetter) { continue }
                        
 	      
-            log "curl.exe  --data `"taskId=$script:taskId&partition=$($partition.PartitionNumber)`" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -"
-            curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId&partition=$($partition.PartitionNumber)" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -
+                log "curl.exe  --data `"taskId=$script:taskId&partition=$($partition.PartitionNumber)`" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -"
+                curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId&partition=$($partition.PartitionNumber)" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -
             
-            log " ** Preparing Client Com Imaging Server For Upload ** " "true"
+                log " ** Preparing Client Com Imaging Server For Upload ** " "true"
 
-            $upload_port=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$taskId&fileName=part$($partition.PartitionNumber).winpe.wim&profileId=$profile_id&userId=$script:userId&hdNumber=$currentHdNumber" ${script:web}PrepareServerUpload  --connect-timeout 10 --stderr -)	        
+                $upload_port=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$taskId&fileName=part$($partition.PartitionNumber).winpe.wim&profileId=$profile_id&userId=$script:userId&hdNumber=$currentHdNumber" ${script:web}PrepareServerUpload  --connect-timeout 10 --stderr -)	        
 
-            if($upload_port -eq "0")
-            {
-	            error "Could Not Start Server Image Receiver"
-	        }
-            Start-Sleep 2
-            Write-Host
+                if($upload_port -eq "0")
+                {
+	                error "Could Not Start Server Image Receiver"
+	            }
+                Start-Sleep 2
+                Write-Host
     
-            log " ...... partitionNumber: $($partition.PartitionNumber)"
+                log " ...... partitionNumber: $($partition.PartitionNumber)"
 
-            log "wimcapture $($updatedPartition.DriveLetter):\ - --compress=fast | udp-sender --portbase $upload_port --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 $client_receiver_args"
-            $udpProc=$(Start-Process cmd "/c wimcapture $($updatedPartition.DriveLetter):\ - --compress=fast | udp-sender --portbase $upload_port --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 $client_receiver_args" -NoNewWindow -PassThru)
+                log "wimcapture $($updatedPartition.DriveLetter):\ - --compress=fast | udp-sender --portbase $upload_port --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 $client_receiver_args"
+                $udpProc=$(Start-Process cmd "/c wimcapture $($updatedPartition.DriveLetter):\ - --compress=fast | udp-sender --portbase $upload_port --pointopoint --no-progress --mcast-rdv-address $upload_server --min-receivers 1 $client_receiver_args" -NoNewWindow -PassThru)
 
-            Wait-Process $udpProc.Id 2>&1 > $null
+                Wait-Process $udpProc.Id 2>&1 > $null
             
             
-            if($notAutoMounted)
-            {
-                mountvol.exe q:\ /d
+                if($notAutoMounted)
+                {
+                    mountvol.exe q:\ /d
+                }
             }
         }
     }
 
     $imageGuid=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id" ${script:web}UpdateGuid  --connect-timeout 10 --stderr -)
-
-
+    if($direct_smb -eq "true")
+    {
+        Add-Content s:\images\$image_name\guid $imageGuid
+    }
 }
 
 
@@ -156,6 +215,12 @@ curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "t
 
 log " ** Removing All Files For Existing Image: $image_name ** "
 curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id" ${script:web}DeleteImage  --connect-timeout 10 --stderr -
+
+if($direct_smb -eq "true")
+{
+    Mount-SMB
+    New-Item s:\images\$image_name\ -ItemType Directory
+}
 
 Create-Image-Schema
 

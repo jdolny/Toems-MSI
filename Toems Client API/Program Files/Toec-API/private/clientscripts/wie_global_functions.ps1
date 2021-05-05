@@ -105,7 +105,7 @@ function Mount-SMB()
 {
     log " ** Mounting SMB Share ** " "true"
 	
-	$smbInfo=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "dpId=$script:dp_id&task=$script:task" ${script:web}DistributionPoint  --connect-timeout 10 --stderr -)
+	$smbInfo=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "dpId=$script:dp_id&task=$script:task" ${script:web}GetSmbShare  --connect-timeout 10 --stderr -)
 	$smbInfo=$smbInfo | ConvertFrom-Json
     if(!$?)
     {
@@ -123,57 +123,7 @@ function Mount-SMB()
     }
     else
     {
-        #look for other distribution points
-        log -message " ...... Looking For Other Distribution Points"
-        $allClusterDps=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "computerId=$script:computer_id" ${script:web}GetAllClusterDps  --connect-timeout 10 --stderr -)
-        log $allClusterDps
-        if(!$?)
-        {
-            $Error[0].Exception.Message
-            $allClusterDps
-            error "Could Not Find Additional Distribution Points"
-        }
-        else
-        {
-            if($allClusterDps -eq "single")
-            {
-                error "Could Not Mount SMB Share.  Server Is Not Clustered."
-            }
-            elseif($allClusterDps -eq "false")
-            {
-                error "Could Not Mount SMB Share and An Unknown Error Occurred While Looking For Others"
-            }
-            else
-            {
-                foreach($localDpId in $allClusterDps.Split(' '))
-                {
-                    log $localDpId
-                    Start-Sleep 2
-                    $smbInfo=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "dpId=$localDpId&task=$script:task" ${script:web}DistributionPoint  --connect-timeout 10 --stderr -)
-	                $smbInfo=$smbInfo | ConvertFrom-Json
-                    if(!$?)
-                    {
-                        $Error[0].Exception.Message
-                        $smbInfo
-                        log -message "Could Not Parse SMB Info" -isDisplay "true"
-                    }
-                    log " ...... Connecting To $($smbInfo.DisplayName)" -isDisplay "true"
-	                Mount-SMB-Sub($smbInfo)
-                    if($script:smbSuccess)
-                    {
-                        Start-Sleep 2
-	                    log -message " ...... Success" -isDisplay "true"
-                        $script:dp_id=$localDpId
-                        break
-                    }
-                }
-            }
-        }
-    }
-
-    if(!$script:smbSuccess)
-    {
-        error "Could Not Mount Any Available SMB Shares"
+        error "Could Not Mount SMB Share"
     }
 
 	Start-Sleep 2
@@ -185,8 +135,15 @@ function Mount-SMB-Sub($smbInfo)
 	$sharePath=$smbInfo.SharePath -replace ("/"),("\")
     net use s: /Delete /Yes 2>&1 >> $null
     Start-Sleep 2
-    net use s: $sharePath /user:$($smbInfo.Domain)\$($smbInfo.Username) $smbInfo.Password 2>x:\mntstat >> $clientLog
-    
+    if($($smbInfo.Domain))
+    {
+        net use s: $sharePath /user:$($smbInfo.Domain)\$($smbInfo.Username) $smbInfo.Password 2>x:\mntstat >> $clientLog
+    }
+    else
+    {
+        net use s: $sharePath /user:$($smbInfo.Username) $smbInfo.Password 2>x:\mntstat >> $clientLog
+    }
+
 	if(!$?)
     {
 	    Get-Content x:\mntstat | Out-File $clientLog -Append
@@ -196,14 +153,6 @@ function Mount-SMB-Sub($smbInfo)
 	else
     {      
         $script:smbSuccess=$true
-        Write-Host
-		cd s:\images\$image_name
-	    if(!$?)
-        {
-            $script:smbSuccess=$false
-            net use s: /Delete /Yes 2>&1 >> $null
-	        log -message " ...... Could Not Change Directory To s:\images\$image_name Verify The Directory Exists And Permissions Are Correct" -isDisplay "true"
-	    }
     }
 }
 

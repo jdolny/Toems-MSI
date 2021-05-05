@@ -183,30 +183,58 @@ function Download-Image()
 
     $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($currentPartition.Number) -direction Deploying -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded -isOnDemand $script:isOnDemand" -NoNewWindow -PassThru)
     
-     if($script:task -eq "multicast" -or $script:task -eq "ondmulticast" )
+    if($direct_smb -eq "true")
     {
-        log "udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
-        $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
-        Start-Sleep 5
-        $wimProc=$(Get-Process wimlib-imagex)
-        Wait-Process $wimProc.Id
-    }
-    else
-    {
-        if($script:stdPartSource)
+        if($script:task -eq "multicast" -or $script:task -eq "ondmulticast" )
         {
-            $wimSource=$script:stdPartSource
+            log "udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
+            $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
+            Start-Sleep 5
+            $wimProc=$(Get-Process wimlib-imagex)
+            Wait-Process $wimProc.Id
         }
         else
         {
-            $wimSource=$currentPartition.Number
-        }
+            if($script:stdPartSource)
+            {
+                $wimSource=$script:stdPartSource
+            }
+            else
+            {
+                $wimSource=$currentPartition.Number
+            }
 
-        log "curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data ""profileId=$profile_id&hdNumber=$($hardDrive.Number)&fileName=part$wimSource.winpe.wim"" ${script:web}GetImagingFile | wimapply - 1 C:"
-        $udpProc=$(Start-Process cmd "/c curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data ""profileId=$profile_id&hdNumber=$($hardDrive.Number)&fileName=part$wimSource.winpe.wim"" ${script:web}GetImagingFile | wimapply - 1 C: 2>>$clientLog > x:\wim.progress" -NoNewWindow -PassThru)
-        Start-Sleep 5
-        $wimProc=$(Get-Process wimlib-imagex)
-        Wait-Process $wimProc.Id 2>&1 > $null
+            log "wimapply $script:imagePath\part$wimSource.winpe.wim C: 2>>$clientLog > x:\wim.progress"
+            wimapply $script:imagePath\part$wimSource.winpe.wim C: 2>>$clientLog > x:\wim.progress
+        }
+    }
+    else
+    {
+        if($script:task -eq "multicast" -or $script:task -eq "ondmulticast" )
+        {
+            log "udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
+            $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
+            Start-Sleep 5
+            $wimProc=$(Get-Process wimlib-imagex)
+            Wait-Process $wimProc.Id
+        }
+        else
+        {
+            if($script:stdPartSource)
+            {
+                $wimSource=$script:stdPartSource
+            }
+            else
+            {
+                $wimSource=$currentPartition.Number
+            }
+
+            log "curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data ""profileId=$profile_id&hdNumber=$($hardDrive.Number)&fileName=part$wimSource.winpe.wim"" ${script:web}GetImagingFile | wimapply - 1 C:"
+            $udpProc=$(Start-Process cmd "/c curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data ""profileId=$profile_id&hdNumber=$($hardDrive.Number)&fileName=part$wimSource.winpe.wim"" ${script:web}GetImagingFile | wimapply - 1 C: 2>>$clientLog > x:\wim.progress" -NoNewWindow -PassThru)
+            Start-Sleep 5
+            $wimProc=$(Get-Process wimlib-imagex)
+            Wait-Process $wimProc.Id 2>&1 > $null
+        }
     }
     
     Start-Sleep 5
@@ -395,6 +423,10 @@ function Process-Hard-Drives()
 
   Start-Sleep 2
 
+if($direct_smb -eq "true")
+{
+    Mount-SMB
+}
 
  if($file_copy -eq "True")
     {

@@ -233,7 +233,84 @@ function download_image()
   
   sleep 7
   echo
+
+  if [ "$direct_smb" = "true" ]; then
+    if [ "$(parse_json "$current_object" .ImageType)" = "Block" ]; then
+    if [ "$(parse_json "$current_object" .Compression)" = "gz" ]; then
+      partCompAlg="gzip -c -d"
+      partCompExt="gz"
+    elif [ "$(parse_json "$current_object" .Compression)" = "lz4" ]; then
+      partCompAlg="lz4 -c -d"
+      partCompExt="lz4"
+    elif [ "$(parse_json "$current_object" .Compression)" = "uncp" ]; then
+      partCompAlg="none"
+      partCompExt=""
+    else
+      error "Could Not Determine Compression Algorithm For Partition"
+    fi
+  		
+  touch /tmp/clone.progress
+			
+  if [ "$task" = "multicast" ] || [ "$task" = "ondmulticast" ]; then
+    if [ "$decompress_multicast_on_client" = "true" ]; then
+	    log "lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | $partCompAlg | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
+      lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | $partCompAlg | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination
+	else #dcompress on server
+      log "lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
+      lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination
+    fi
+  else #unicast
+    if [ "$partCompAlg" = "none" ]; then #no compression
+	   lie_reporter $task_id partclone & partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -s $image_path/$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).uncp -o $destination
+	   log "lie_reporter $task_id partclone & partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -s $image_path/$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).uncp -o $destination"
+	else #compression in use
+      log "lie_reporter $task_id partclone & $partCompAlg $image_path/$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).$partCompExt | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
+      lie_reporter $task_id partclone & $partCompAlg $image_path/$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).$partCompExt | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination
+	fi
+  fi
+			
+  rm /tmp/clone.progress
+  cat /var/log/partclone.log >> $CLIENT_LOG
+  else # ImageType = File
+    export WIMLIB_IMAGEX_USE_UTF8=1
+    log " ** Creating $(parse_json "$current_object" .FileSystem) Filesystem On $destination ** "
+    if [ "$(parse_json "$current_object" .FileSystem)" = "ntfs" ]; then
+	  log "mkfs.$(parse_json "$current_object" .FileSystem) -f $destination"
+	  mkfs.$(parse_json "$current_object" .FileSystem) -f $destination &>> $CLIENT_LOG
+	  ms-sys -n -f $destination	2>> $CLIENT_LOG
+	elif [ "$(parse_json "$current_object" .FileSystem)" = "vfat" ]; then
+	  log "mkfs.$(parse_json "$current_object" .FileSystem) -f $destination"
+	  mkfs.fat -F 32 $destination 2>> $CLIENT_LOG
+	elif [ "$(parse_json "$current_object" .FileSystem)" = "xfs" ]; then
+	  log "mkfs.$(parse_json "$current_object" .FileSystem) -f $destination"
+	  wim_arguments=" --unix-data"
+	  mkfs.$(parse_json "$current_object" .FileSystem) -f $destination &>> $CLIENT_LOG
+	  xfs_admin -U $(parse_json "$current_object" .Uuid) $destination &>> $CLIENT_LOG
+	else #ext filesystems
+	  log "mkfs.$(parse_json "$current_object" .FileSystem) -F $destination"
+	  wim_arguments=" --unix-data"
+	  mkfs.$(parse_json "$current_object" .FileSystem) -F $destination &>> $CLIENT_LOG
+	  tune2fs $destination -U $(parse_json "$current_object" .Uuid) &>> $CLIENT_LOG
+	fi
 	
+	
+	if [ "$(parse_json "$current_object" .FileSystem)" != "ntfs" ]; then
+	  mkdir /mnt/fs &> /dev/null
+	  umount /mnt/fs &> /dev/null
+	  mount $destination /mnt/fs 2>> $CLIENT_LOG
+	  destination="/mnt/fs"
+	fi
+	
+	if [ "$task" = "multicast" ] || [ "$task" = "ondmulticast" ]; then
+	  log "lie_reporter $task_id wim & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimlib-imagex apply - 1 $destination $wim_arguments"
+	  lie_reporter $task_id wim & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimlib-imagex apply - 1 $destination $wim_arguments 2>> $CLIENT_LOG | tee /tmp/wim.progress
+	else
+	  log "lie_reporter $task_id wim & wimlib-imagex apply $image_path/$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).wim 1 $destination $wim_arguments"
+	  lie_reporter $task_id wim & wimlib-imagex apply $image_path/$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).wim 1 $destination $wim_arguments 2>> $CLIENT_LOG | tee /tmp/wim.progress
+	fi
+  fi 
+  else
+  
   if [ "$(parse_json "$current_object" .ImageType)" = "Block" ]; then
     if [ "$(parse_json "$current_object" .Compression)" = "gz" ]; then
       partCompAlg="gzip -c -d"
@@ -249,7 +326,8 @@ function download_image()
     fi
   		
   touch /tmp/clone.progress
-			
+
+    
   if [ "$task" = "multicast" ] || [ "$task" = "ondmulticast" ]; then
     if [ "$decompress_multicast_on_client" = "true" ]; then
 	    log "lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | $partCompAlg | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
@@ -313,7 +391,10 @@ function download_image()
 	  lie_reporter $task_id wim & $curlAuth --data "profileId=$profile_id&hdNumber=$current_hd_number&fileName=$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).wim" "${web}GetImagingFile" $curlEnd | wimlib-imagex apply - 1 $destination 2>> $CLIENT_LOG | tee /tmp/wim.progress
 	  
 	fi
-  fi 
+  fi
+  fi
+  
+  
 }
 
 function restore_mbr_gpt()
@@ -322,8 +403,14 @@ function restore_mbr_gpt()
   local hybrid_status
   
   log " ** Restoring MBR / GPT On $hard_drive ** " "display"
-
-  $curlAuth --data "profileId=$profile_id&hdNumber=$current_hd_number&fileName=table" "${web}GetImagingFile" $curlEnd | dd of=$hard_drive &>>$CLIENT_LOG				
+  
+  if [ "$direct_smb" = "true" ]; then
+    dd if=$image_path/table of=$hard_drive &>>$CLIENT_LOG
+  else
+    $curlAuth --data "profileId=$profile_id&hdNumber=$current_hd_number&fileName=table" "${web}GetImagingFile" $curlEnd | dd of=$hard_drive &>>$CLIENT_LOG
+  fi
+  
+  				
 		
   #Sometimes restoring results in damaged GPT.  Done the long way to hide error messages.
   gdisk -l $hard_drive <<< "2" &>/tmp/gptstatus
@@ -1014,7 +1101,11 @@ function main()
   checkin
   
   verify_image_server
-    
+  
+  if [ "$direct_smb" = "true" ]; then
+    mount_smb
+  fi
+  
   process_hard_drives
 	
   checkout
