@@ -199,10 +199,7 @@ function Upload-Image()
     }
 
     $imageGuid=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id" ${script:web}UpdateGuid  --connect-timeout 10 --stderr -)
-    if($direct_smb -eq "true")
-    {
-        Add-Content s:\images\$image_name\guid $imageGuid
-    }
+
 }
 
 
@@ -219,7 +216,7 @@ curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "p
 if($direct_smb -eq "true")
 {
     Mount-SMB
-    New-Item s:\images\$image_name\ -ItemType Directory
+    New-Item s:\images\$image_name\ -ItemType Directory 2>&1 >> $clientLog
 }
 
 Create-Image-Schema

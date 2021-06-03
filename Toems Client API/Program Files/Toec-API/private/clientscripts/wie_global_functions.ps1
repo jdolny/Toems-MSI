@@ -105,7 +105,7 @@ function Mount-SMB()
 {
     log " ** Mounting SMB Share ** " "true"
 	
-	$smbInfo=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "dpId=$script:dp_id&task=$script:task" ${script:web}GetSmbShare  --connect-timeout 10 --stderr -)
+	$smbInfo=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded ${script:web}GetSmbShare  --connect-timeout 10 --stderr -)
 	$smbInfo=$smbInfo | ConvertFrom-Json
     if(!$?)
     {
@@ -113,7 +113,7 @@ function Mount-SMB()
         $smbInfo
         log -message "Could Not Parse SMB Info" -isDisplay "true"
     }
-    log " ...... Connecting To $($smbInfo.DisplayName)" -isDisplay "true"
+    log " ...... Connecting To $($smbInfo.SharePath)" -isDisplay "true"
 	Mount-SMB-Sub($smbInfo)
 
     if($script:smbSuccess)
@@ -132,7 +132,7 @@ function Mount-SMB()
 function Mount-SMB-Sub($smbInfo)
 {
     #fix path that was originally only used for initrd
-	$sharePath=$smbInfo.SharePath -replace ("/"),("\")
+	$sharePath=$($smbInfo.SharePath) -replace ("/"),("\")
     net use s: /Delete /Yes 2>&1 >> $null
     Start-Sleep 2
     if($($smbInfo.Domain))
@@ -141,7 +141,7 @@ function Mount-SMB-Sub($smbInfo)
     }
     else
     {
-        net use s: $sharePath /user:$($smbInfo.Username) $smbInfo.Password 2>x:\mntstat >> $clientLog
+        net use s: $sharePath /user:Workgroup\$($smbInfo.Username) $smbInfo.Password 2>x:\mntstat >> $clientLog
     }
 
 	if(!$?)

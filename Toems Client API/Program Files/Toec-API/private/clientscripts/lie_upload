@@ -749,11 +749,9 @@ function process_hard_drives()
 
   done
 
-  if [ "$direct_smb" = "true" ]; then
-    echo $image_guid > /storage/images/$image_name/guid
-  else
-    image_guid=$($curlAuth --data "profileId=$profile_id" "${web}UpdateGuid" $curlEnd)
-  fi
+
+  image_guid=$($curlAuth --data "profileId=$profile_id" "${web}UpdateGuid" $curlEnd)
+  
 
   
   log " shrunk_volumes: $shrunk_volumes"
