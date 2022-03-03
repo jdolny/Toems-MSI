@@ -178,6 +178,7 @@ function check_auth()
 
 function get_task_computer()
 {
+  local client_id_type="$1"
  #Assume task is on demand unless clobber mode and computer does not exist until each are found 
   if [ -z "$task" ]; then
     export task="ond"
@@ -193,11 +194,16 @@ function get_task_computer()
   for interface in `ls /sys/class/net | grep -v "lo" | sed 's/@//'`; do
     export mac=$(cat /sys/class/net/$interface/address)
 	
-	client_id="$mac.$(remove_whitespace $serial_number).$(remove_whitespace $system_uuid)"
+	if [ "$client_id_type" = "full" ]; then
+	  client_id="$mac.$(remove_whitespace $serial_number).$(remove_whitespace $system_uuid)"
+	else #client_id_type = mac
+	  client_id="$mac"
+	fi
 	
 	echo
 	log " ** Looking For Active Task For $client_id ** " "display"
 	computer_task_object=$($curlCommand --data "id=$client_id" "${web}DetermineTask" $curlEnd)
+
 	log "$computer_task_object"
 	if [ "$?" != "0" ]; then
       log "$computer_task_object"
@@ -347,7 +353,13 @@ function main()
   date -s "$utcDateTime" &>> /dev/null
 
   if [ -z "$task" ]; then
-    get_task_computer
+    #try to find task using full client id
+    get_task_computer "full"
+	#if no task found, try to find task using only the mac address as the client id
+	if [ "$task" = "register" ]; then
+	  task=""
+	  get_task_computer "mac"
+	fi
   fi
 
   clear_and_move_down
