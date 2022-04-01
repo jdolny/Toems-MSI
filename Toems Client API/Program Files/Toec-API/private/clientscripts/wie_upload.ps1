@@ -101,6 +101,7 @@ function Upload-Image()
         foreach($hardDrive in $script:HardDrives)
         {
             $currentHdNumber++
+            $partitionLetters = @('G','H','I','J','K','L','M','N','O','P') #win11 fix where current partition would not unmount
             $imagePath="s:\images\$image_name\hd$currentHdNumber"
             mkdir "$imagePath" >> $clientLog
 
@@ -113,7 +114,7 @@ function Upload-Image()
                 if(!$partition.DriveLetter)
                 {
                     $notAutoMounted=$true
-                    Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter Q 2>>$clientLog
+                    Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter $partitionLetters[$partitionCounter] 2>>$clientLog
                 }
                 $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
 
@@ -138,7 +139,8 @@ function Upload-Image()
             
                 if($notAutoMounted)
                 {
-                    mountvol.exe q:\ /d
+                    Start-Sleep 5
+                    #mountvol.exe q:\ /d
                 }
             }
         }
@@ -148,6 +150,7 @@ function Upload-Image()
         foreach($hardDrive in $script:HardDrives)
         {
             $currentHdNumber++
+            $partitionLetters = @('G','H','I','J','K','L','M','N','O','P') #win11 fix where current partition would not unmount
 
             foreach($partition in Get-Partition -DiskNumber $hardDrive.Number | Sort-Object PartitionNumber)
             {
@@ -160,7 +163,7 @@ function Upload-Image()
                 if(!$partition.DriveLetter)
                 {
                     $notAutoMounted=$true
-                    Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter Q 2>>$clientLog
+                    Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter $partitionLetters[$partitionCounter] 2>>$clientLog
                 }
                 $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
 
@@ -192,7 +195,8 @@ function Upload-Image()
             
                 if($notAutoMounted)
                 {
-                    mountvol.exe q:\ /d
+                    Start-Sleep 5
+                    #mountvol.exe q:\ /d
                 }
             }
         }
