@@ -139,7 +139,6 @@
     <ROW Condition="(VersionNT &lt;&gt; 400)" Description="[ProductName] cannot be installed on [WindowsTypeNT40Display]." DescriptionLocId="AI.LaunchCondition.NoNT40" IsPredefined="true" Builds="DefaultBuild"/>
     <ROW Condition="(VersionNT &lt;&gt; 500)" Description="[ProductName] cannot be installed on [WindowsTypeNT50Display]." DescriptionLocId="AI.LaunchCondition.NoNT50" IsPredefined="true" Builds="DefaultBuild"/>
     <ROW Condition="(VersionNT64 OR ((VersionNT &lt;&gt; 501) OR (ServicePackLevel = 3))) AND ((VersionNT &lt;&gt; 502) OR (ServicePackLevel = 2))" Description="[ProductName] cannot be installed on [WindowsTypeNT5XDisplay]." DescriptionLocId="AI.LaunchCondition.NoNT5X" IsPredefined="true" Builds="DefaultBuild"/>
-    <ROW Condition="TOEMS_120_INSTALLED OR TOEMS_121_INSTALLED" Description="This update cannot be installed.  You must first install Theopenem 1.2.x."/>
     <ROW Condition="VersionNT" Description="[ProductName] cannot be installed on [WindowsType9XDisplay]." DescriptionLocId="AI.LaunchCondition.No9X" IsPredefined="true" Builds="DefaultBuild"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiRegsComponent">
