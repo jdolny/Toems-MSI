@@ -5,16 +5,24 @@ clear
 log -message "No Active Web Tasks Were Found For This Computer.  Starting On Demand Imaging." -isDisplay "true"
 Write-Host
 
-$taskTable=[ordered]@{"deploy"="Deploy";"upload"="Upload";"multicast"="Multicast";}
+$taskTable=[ordered]@{"deploy"="Deploy";"upload"="Upload";"multicast"="Multicast";"reboot"="Reboot";"shutdown"="Shutdown";}
 $taskType=$(fShowMenu "Select A Task" $taskTable)
 
-
-if($taskType -eq "deploy")
+if($taskType -eq "reboot")
+{
+  wpeutil reboot
+}
+elseif($taskType -eq "shutdown")
+{
+  wpeutil shutdown
+}
+elseif($taskType -eq "deploy")
 {
     
     $imageList=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "environment=winpe&computerId=$script:computerId&task=deploy&userId=$script:userId" ${script:web}ListImages --connect-timeout 10 --stderr -)
     $imageList = $imageList | ConvertFrom-Json
     $imageTable=[ordered]@{}
+    $imageTable.Add("-99","<-- Go Back")
     foreach($image in $imageList)
     {
         $imageTable.Add($image.ImageId,$image.ImageName)
@@ -23,9 +31,9 @@ if($taskType -eq "deploy")
     $imageId=$(fShowMenu "Select An Image" $imageTable)
 
 
-    if(!$imageId)
+    if(!$imageId -or $imageId -eq "-1" -or $imageId -eq "-99")
     {
-        error "No Image Was Selected Or No Images Have Been Added Yet"
+        . x:\wie_ond.ps1
     }
     $imageProfileList=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "imageId=$imageId" ${script:web}ListImageProfiles --connect-timeout 10 --stderr -)
 	$imageProfileList = $imageProfileList | ConvertFrom-Json
@@ -36,12 +44,18 @@ if($taskType -eq "deploy")
 	else
     {
         $profileTable=[ordered]@{}
+        $profileTable.Add("-99","<-- Go Back")
         foreach($imageProfile in $imageProfileList.ImageProfiles)
         {
             $profileTable.Add($imageProfile.ProfileId,$imageProfile.ProfileName)
         }
         clear
-        $script:imageProfileId=$(fShowMenu "Select An Image Profile" $profileTable)	
+        $script:imageProfileId=$(fShowMenu "Select An Image Profile" $profileTable)
+
+        if(!$script:imageProfileId -or $script:imageProfileId -eq "-99")
+        {
+          . x:\wie_ond.ps1
+        }
     }
 
     if($script:computer_id -eq "false")
@@ -56,9 +70,12 @@ if($taskType -eq "deploy")
 elseif($taskType -eq "upload")
 {
     clear
-    $newExistingTable=[ordered]@{"new"="New";"existing"="Existing";}
+    $newExistingTable=[ordered]@{"-99"="<-- Go Back";"new"="New";"existing"="Existing";}
     $newOrExisting=$(fShowMenu "New Or Existing Image?" $newExistingTable)
-    
+    if($newOrExisting -eq "-99")
+    {
+      . x:\wie_ond.ps1
+    }
     if($newOrExisting -eq "new")
     {
     while($isError -ne "false")
@@ -107,6 +124,7 @@ elseif($taskType -eq "upload")
     $imageList=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "environment=winpe&computerId=$script:computerId&task=upload&userId=$script:userId" ${script:web}ListImages --connect-timeout 10 --stderr -)
     $imageList = $imageList | ConvertFrom-Json
     $imageTable=[ordered]@{}
+    $imageTable.Add("-99","<-- Go Back")
     foreach($image in $imageList)
     {
         $imageTable.Add($image.ImageId,$image.ImageName)
@@ -119,9 +137,10 @@ elseif($taskType -eq "upload")
     error "Could Not Determine If This Is A New Or Existing Image"
   }
   
-    if(!$imageId)
+   
+    if(!$imageId -or $imageId -eq "-1" -or $imageId -eq "-99")
     {
-	  error "No Image Was Selected Or No Images Have Been Added Yet"
+        . x:\wie_ond.ps1
     }
 
     $imageProfileList=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "imageId=$imageId" ${script:web}ListImageProfiles --connect-timeout 10 --stderr -)
@@ -133,12 +152,18 @@ elseif($taskType -eq "upload")
 	else
     {
         $profileTable=[ordered]@{}
+        $profileTable.Add("-99","<-- Go Back")
         foreach($imageProfile in $imageProfileList.ImageProfiles)
         {
             $profileTable.Add($imageProfile.ProfileId,$imageProfile.ProfileName)
         }
         clear
         $script:imageProfileId=$(fShowMenu "Select An Image Profile" $profileTable)	
+
+        if(!$script:imageProfileId -or $script:imageProfileId -eq "-99")
+        {
+          . x:\wie_ond.ps1
+        }
     }
 
     if($script:computer_id -eq "false")
@@ -157,6 +182,7 @@ elseif($taskType -eq "multicast")
     $multicastList=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "environment=winpe" ${script:web}ListMulticasts --connect-timeout 10 --stderr -)
     $multicastList = $multicastList | ConvertFrom-Json
     $multicastTable=[ordered]@{}
+    $multicastTable.Add("-99","<-- Go Back")
     foreach($multicast in $multicastList)
     {
         $multicastTable.Add($multicast.Port,$multicast.Name)
@@ -164,10 +190,10 @@ elseif($taskType -eq "multicast")
     clear
     $script:multicastId=$(fShowMenu "Select A Multicast Session" $multicastTable)
 
-    if(!$script:multicastId)
+    if(!$script:multicastId -or $script:multicastId -eq "-1" -or $script:multicastId -eq "-99")
     {
-	  error "No Multicast Session Was Selected Or There Are No Active Sessions"
-	}
+        . x:\wie_ond.ps1
+    }
 
     $script:task="ondmulticast"
 }

@@ -7,22 +7,36 @@ if [ "$started_from_init" != "true" ]; then
 fi
 
 is_ondemand="true"
-taskType=$(dialog --backtitle "Theopenem" --title "Select A Task" --clear --menu "" 20 60 15 1 Deploy 2 Upload 3 Multicast 4 Console 2>&1 >/dev/tty0)
+taskType=$(dialog --backtitle "Theopenem" --title "Select A Task" --clear --menu "" 20 60 15 1 Deploy 2 Upload 3 Multicast 4 "Console / Shell" 5 Reboot 6 Shutdown 2>&1 >/dev/tty0)
 
-if [ "$taskType" != "1" ] && [ "$taskType" != "2" ] && [ "$taskType" != "3" ] && [ "$taskType" != "4" ]; then
-	error "Could Not Determine Task Type"
+if [ -z "$taskType" ]; then
+	  /bin/lie_ond
 fi
 
 if [ "$taskType" = "4" ]; then
   /bin/bash
 fi
 
+if [ "$taskType" = "5" ]; then
+  reboot -f
+fi
+
+if [ "$taskType" = "6" ]; then
+  poweroff -f
+fi
+
+if [ "$taskType" != "1" ] && [ "$taskType" != "2" ] && [ "$taskType" != "3" ]; then
+	error "Could Not Determine Task Type"
+fi
+
+
+
 if [ "$taskType" = "1" ]; then
 	imageList=`$curlAuth --data "environment=linux&computerId=$computer_id&task=deploy&userId=$user_id" "${web}ListImages" $curlEnd`
 	imageId=$(dialog --backtitle "Theopenem" --title "Select An Image" --clear --menu "" 20 60 15 `parse_json "$imageList" .Images[]` 2>&1 >/dev/tty0)
 	log "Image Id: $imageId"
-	if [ -z "$imageId" ]; then
-	  error "No Image Was Selected Or No Images Have Been Added Yet"
+	if [ -z "$imageId" ] || [ "$imageId" = "-1" ]; then
+	  /bin/lie_ond
 	fi
 	imageProfileList=`$curlAuth --data "imageId=$imageId" "${web}ListImageProfiles" $curlEnd`
 	log "$imageProfileList"
@@ -30,6 +44,9 @@ if [ "$taskType" = "1" ]; then
 		image_profile_id=`parse_json "$imageProfileList" .FirstProfileId`
 	else
 		image_profile_id=$(dialog --backtitle "Theopenem" --title "Select An Image Profile" --clear --menu "" 20 60 15 `parse_json "$imageProfileList" .ImageProfiles[]` 2>&1 >/dev/tty0)
+		if [ -z "$image_profile_id" ]; then
+	      /bin/lie_ond
+	    fi
 	fi	
 	
 	if [ "$computer_id" = "false" ]; then
@@ -42,7 +59,10 @@ if [ "$taskType" = "1" ]; then
 elif [ "$taskType" = "2" ]; then
 
   new_or_existing=$(dialog --backtitle "Theopenem" --title "New Or Existing?" --clear --menu "" 20 60 15 1 "New Image" 2 "Existing Image" 2>&1 >/dev/tty0)
-
+  if [ -z "$new_or_existing" ]; then
+	  /bin/lie_ond
+  fi
+  
   if [ "$new_or_existing" != "1" ] && [ "$new_or_existing" != "2" ]; then
 	error "Could Not Determine If This Is A New Or Existing Image"
   fi
@@ -57,7 +77,7 @@ elif [ "$taskType" = "2" ]; then
 	  fi	
 	  
 	  if [ -z "$new_image_name" ]; then
-	    error "No Image Name Entered"
+	    /bin/lie_ond
 	  fi
 	  
 		addImageResult=$($curlAuth --data "name=$new_image_name" ${web}AddImage $curlClose)
@@ -78,14 +98,17 @@ elif [ "$taskType" = "2" ]; then
     image_id=$(dialog --backtitle "Theopenem" --title "Select An Image" --clear --menu "" 20 60 15 `parse_json "$image_list" .Images[]` 2>&1 >/dev/tty0)
   fi
   
-    if [ -z "$image_id" ]; then
-	  error "No Image Was Selected Or No Images Have Been Added Yet"
+    if [ -z "$image_id" ] || [ "$image_id" = "-1" ]; then
+	  /bin/lie_ond
     fi
     profile_list=`$curlAuth --data "imageId=$image_id" "${web}ListImageProfiles" $curlEnd`
     if [ "$(parse_json "$profile_list" .Count)" = "1" ]; then
       image_profile_id=`parse_json "$profile_list" .FirstProfileId`
     else
       image_profile_id=$(dialog --backtitle "Theopenem" --title "Select An Image Profile" --clear --menu "" 20 60 15 `parse_json "$profile_list" .ImageProfiles[]` 2>&1 >/dev/tty0)
+	  if [ -z "$image_profile_id" ]; then
+	      /bin/lie_ond
+	  fi
     fi
 	
 	if [ "$computer_id" = "false" ]; then
@@ -98,10 +121,9 @@ elif [ "$taskType" = "2" ]; then
 elif [ "$taskType" = "3" ]; then
 	multicastList=`$curlAuth  --data "environment=linux" "${web}ListMulticasts" $curlEnd`
 	multicastId=$(dialog --backtitle "Theopenem" --title "Select A Multicast Session" --clear --menu "" 20 60 15 `parse_json "$multicastList" .Multicasts[]` 2>&1 >/dev/tty0)
-	if [ -z "$multicastId" ]; then
-	  error "No Multicast Session Was Selected Or There Are No Active Sessions"
-	fi
-	
+	if [ -z "$multicastId" ] || [ "$multicastId" = "-1" ]; then
+	  /bin/lie_ond
+    fi
 
 	task="ondmulticast"	
 	. /bin/lie_deploy
