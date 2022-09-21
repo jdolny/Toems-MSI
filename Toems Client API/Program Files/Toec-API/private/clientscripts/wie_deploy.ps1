@@ -212,8 +212,8 @@ function Download-Image()
     {
         if($script:task -eq "multicast" -or $script:task -eq "ondmulticast" )
         {
-            log "udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
-            $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
+            log "udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
+            $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
             Start-Sleep 5
             $wimProc=$(Get-Process wimlib-imagex)
             Wait-Process $wimProc.Id
