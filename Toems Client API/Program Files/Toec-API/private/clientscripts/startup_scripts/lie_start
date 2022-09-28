@@ -218,6 +218,7 @@ function get_task_computer()
 	      export task="$(parse_json "$computer_task_object" .task)"
 		  export task_id="$(parse_json "$computer_task_object" .taskId)"
 		  export computer_name="$(parse_json "$computer_task_object" .computerName)"
+		  webTaskToken=$($curlCommand --data "id=$client_id" "${web}GetWebTaskToken" $curlEnd)
 		  log " ...... Success" "display"
 		  login_message="Found $task Task For Computer: $computer_name"
 		  task_found="true"
@@ -273,10 +274,10 @@ function get_task_computer()
 function clonedeploy_login()
 {
   loginRequired=$($curlCommand --data "task=$task" "${web}IsLoginRequired" $curlEnd)
-if [ "$login_debug" = "1" ]; then
- echo " Login Required: $loginRequired"
-fi
-if [ "$loginRequired" != "False" ]; then
+
+if [ "$loginRequired" = "False" ] && [ ! -z "$webTaskToken" ] && [[ "$webTaskToken" != *"Error"* ]] && [[ "$webTaskToken" != *"error"* ]]; then
+    export USER_TOKEN="$webTaskToken"
+elif [ "$loginRequired" != "False" ]; then
 	loginCount=1
 	echo " IP Address: $clientIP"
 	echo " Computer  : $computer_name"
