@@ -678,6 +678,11 @@ function upload_image()
 	    error "Could Not Start Server Image Receiver"
 	  fi
 	
+	  upload_server=$($curlAuth "${web}GetUploadServerIp" $curlEnd)  
+	  if [ "$upload_server" = "0" ]; then
+	    error "Could Not Determine Upload Server Ip"
+	  fi
+	  
       if [ "$image_type" = "File" ] && [ -n "$wim_arguments" ]; then
 	    export WIMLIB_IMAGEX_USE_UTF8=1
 	    if [ "$filesystem_type" = "ntfs" ]; then

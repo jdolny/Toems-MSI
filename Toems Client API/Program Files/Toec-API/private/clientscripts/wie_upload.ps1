@@ -182,6 +182,15 @@ function Upload-Image()
                 {
 	                error "Could Not Start Server Image Receiver"
 	            }
+
+                
+                $upload_server=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded  ${script:web}GetUploadServerIp  --connect-timeout 10 --stderr -)	        
+                if($upload_server -eq "0")
+                {
+	                error "Could Not Determine Upload Server Ip"
+	            }
+                
+
                 Start-Sleep 2
                 Write-Host
     
