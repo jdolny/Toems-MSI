@@ -330,11 +330,11 @@ function download_image()
     
   if [ "$task" = "multicast" ] || [ "$task" = "ondmulticast" ]; then
     if [ "$decompress_multicast_on_client" = "true" ]; then
-	    log "lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | $partCompAlg | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
-      lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | $partCompAlg | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination
+	    log "lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | $partCompAlg | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
+      lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | $partCompAlg | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination
 	else #dcompress on server
-      log "lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
-      lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination
+      log "lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination"
+      lie_reporter $task_id partclone & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | partclone.$(parse_json "$current_object" .PartcloneFileSystem) -B -r -o $destination
     fi
   else #unicast
     if [ "$partCompAlg" = "none" ]; then #no compression
@@ -383,8 +383,8 @@ function download_image()
 	fi
 	
 	if [ "$task" = "multicast" ] || [ "$task" = "ondmulticast" ]; then
-	  log "lie_reporter $task_id wim & udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimlib-imagex apply - 1 $destination $wim_arguments"
-	  lie_reporter $task_id wim & udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimlib-imagex apply - 1 $destination $wim_arguments 2>> $CLIENT_LOG | tee /tmp/wim.progress
+	  log "lie_reporter $task_id wim & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimlib-imagex apply - 1 $destination $wim_arguments"
+	  lie_reporter $task_id wim & udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimlib-imagex apply - 1 $destination $wim_arguments 2>> $CLIENT_LOG | tee /tmp/wim.progress
 	else
 	  log " lie_reporter $task_id wim & $curlAuth --data 'profileId=$profile_id&hdNumber=$current_hd_number&fileName=$file_name_prefix.$(parse_json "$current_object" .PartcloneFileSystem).wim" "${web}GetImagingFile' $curlEnd | wimlib-imagex apply - 1 $destination 2>> $CLIENT_LOG | tee /tmp/wim.progress"
 	  
