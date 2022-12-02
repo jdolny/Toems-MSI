@@ -1,5 +1,5 @@
 ﻿. x:\wie_menu.ps1
-Add-Content "x:\clientlog.log" "WIE Version: 1.4.1"
+Add-Content "x:\clientlog.log" "WIE Version: 1.5.0"
 
 $script:web=$(Get-Content x:\windows\system32\web.txt).Trim()
 try
