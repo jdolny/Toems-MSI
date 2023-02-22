@@ -117,7 +117,8 @@ function Process-Partitions()
             }
         }
           
-                 
+        
+        #each partition that is deployed get's mounted as c: and gets unmounted at the end of processing, so the current partition is always c:         
         Download-Image
         
         if($before_file_scripts.trim("`""))
@@ -127,7 +128,7 @@ function Process-Partitions()
 
         if($file_copy -eq "True")
         {
-            Process-File-Copy
+            Process-File-Copy "C"
         }
 
         if($after_file_scripts.trim("`""))
@@ -137,19 +138,19 @@ function Process-Partitions()
 
         if(Test-Path c:\Windows)
         {
-            $script:windowsPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($currentPartition.Number))
             
             log " ** Making System Bootable ** " "true"
-            bcdboot c:\Windows /s q: /f ALL >> $clientLog 
+            log "bcdboot c:\Windows /s q: /f ALL"
+            bcdboot c:\Windows /s q: /f ALL  >> $clientLog 
 
             if($change_computer_name -eq "true" -and $computer_name)
             {
-                Change-Computer-Name
+                Change-Computer-Name "C"
             }
 
             if($sysprep_tags.trim("`""))
             {
-                Process-Sysprep-Tags
+                Process-Sysprep-Tags "C"
             }
         }
 
@@ -172,6 +173,98 @@ function Reg-Key-Exists($regObject, $value)
 
 }
 
+function Download-FFU()
+{
+    log " ** Starting Image Download For Hard Drive $($hardDrive.Number)" "true"
+    Clear-Disk $hardDrive.Number -RemoveData -RemoveOEM -Confirm:$false
+    curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId&partition=$($hardDrive.Number)" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -
+
+    $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($hardDrive.Number) -direction Deploying -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded -imageType Block " -NoNewWindow -PassThru)
+    
+    log "Dism /Apply-Ffu /ImageFile:$script:imagePath\disk.ffu /ApplyDrive:\\.\PhysicalDrive$($hardDrive.Number) > x:\ffu.progress"
+    Dism /Apply-Ffu /ImageFile:$script:imagePath\disk.ffu /ApplyDrive:\\.\PhysicalDrive$($hardDrive.Number) > x:\ffu.progress
+    
+    Start-Sleep 5
+    Stop-Process $reporterProc 2>&1 > $null
+    
+    $partitionLetters = @('G','H','I','J','K','L','M','N','O','P') #win11 fix where current partition would not unmount
+    foreach($partition in Get-Partition -DiskNumber $hardDrive.Number | Sort-Object Size)
+    {
+        $partitionCounter++
+        if(!$partition.DriveLetter)
+        {
+            Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter $partitionLetters[$partitionCounter] 2>>$clientLog
+        }
+        $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
+
+        if(!$updatedPartition.DriveLetter) { continue }       
+        if($updatedPartition.Type -eq "System")
+        {
+            $systemDriveLetter=$updatedPartition.DriveLetter
+        }
+        if($before_file_scripts.trim("`""))
+        {
+            Process-Scripts "$before_file_scripts"
+        }
+
+        if($file_copy -eq "True")
+        {
+            Process-File-Copy "$($updatedPartition.DriveLetter)"
+        }
+
+        if($after_file_scripts.trim("`""))
+        {
+            Process-Scripts "$after_file_scripts"
+        }
+
+        if(Test-Path "$($updatedPartition.DriveLetter):\Windows")
+        {
+            
+            log " ** Making System Bootable ** " "true"
+            log "bcdboot $($updatedPartition.DriveLetter):\Windows /s $($systemDriveLetter): /f ALL"
+            bcdboot "$($updatedPartition.DriveLetter):\Windows" /s "$($systemDriveLetter):" /f ALL  >> $clientLog 
+            
+            if($change_computer_name -eq "true" -and $computer_name)
+            {
+                Change-Computer-Name "$($updatedPartition.DriveLetter)"
+            }
+
+            if($sysprep_tags.trim("`""))
+            {
+                Process-Sysprep-Tags "$($updatedPartition.DriveLetter)"
+            }
+        }          
+    }
+    Expand-Ffu-Partitions
+
+    log " ** New Partition Table Is ** "
+    Get-Partition -DiskNumber $hardDrive.Number | Out-File $clientLog -Append
+}
+
+function Expand-Ffu-Partitions()
+{
+    log " ** Expanding Windows Partition ** "
+    $lastPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) | Sort-Object -Property Offset -Descending | Select-Object -First 1)
+    if($lastPartition.Type -eq "Recovery")
+    {
+      Remove-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($lastPartition.PartitionNumber) -Confirm:$false
+    }
+
+    foreach($partition in Get-Partition -DiskNumber $hardDrive.Number)
+    {
+        if(!$partition.DriveLetter) { continue }
+        if(Test-Path "$($partition.DriveLetter):\Windows")
+        {
+            $maxSize=$(Get-PartitionSupportedSize -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber))
+            Resize-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -Size $maxSize.SizeMax
+            "select disk $($hardDrive.Number)", "select partition 3", "shrink desired=500", `
+            "create partition primary","format quick fs=ntfs label=`"Recovery tools`"","set id=`"de94bba4-06d1-4d40-a16a-bfd50179d6ac`"","gpt attributes=0x8000000000000001" `
+            | diskpart 2>&1 >> $clientLog    
+            break
+        }
+    }
+}
+
 function Download-Image()
 {
     log " ** Starting Image Download For Hard Drive $($hardDrive.Number) Partition $($currentPartition.Number)" "true"
@@ -181,9 +274,9 @@ function Download-Image()
 
     Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($currentPartition.Number) -NewDriveLetter C 2>&1 >> $clientLog
 
-    $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($currentPartition.Number) -direction Deploying -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded -isOnDemand $script:isOnDemand" -NoNewWindow -PassThru)
+    $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($currentPartition.Number) -direction Deploying -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded" -NoNewWindow -PassThru)
     
-    if($direct_smb -eq "true")
+    if($direct_smb -eq "true" -and $script:smbSuccess)
     {
         if($script:task -eq "multicast" -or $script:task -eq "ondmulticast" )
         {
@@ -212,8 +305,8 @@ function Download-Image()
     {
         if($script:task -eq "multicast" -or $script:task -eq "ondmulticast" )
         {
-            log "udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
-            $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
+            log "udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>$clientLog > x:\wim.progress"
+            $udpProc=$(Start-Process cmd "/c udp-receiver --portbase $multicast_port --no-progress --mcast-rdv-address $multicast_server_ip $client_receiver_args | wimapply - 1 C: 2>>x:\wim.log > x:\wim.progress" -NoNewWindow -PassThru)
             Start-Sleep 5
             $wimProc=$(Get-Process wimlib-imagex)
             Wait-Process $wimProc.Id
@@ -242,9 +335,9 @@ function Download-Image()
     
 }
 
-function Process-Sysprep-Tags()
+function Process-Sysprep-Tags($partitionLetter)
 {
-    if(Test-Path c:\Windows\Panther\unattend.xml)
+    if(Test-Path "$($partitionLetter):\Windows\Panther\unattend.xml")
     {
         foreach($tagId in -Split $sysprep_tags.trim("`""))
         {
@@ -263,7 +356,7 @@ function Process-Sysprep-Tags()
             $tag.Contents=$($ExecutionContext.InvokeCommand.ExpandString($tag.Contents))
             log $tag.Contents
             sleep 5
-            perl -0777 "-i.bak" -pe "s/($($tag.OpeningTag)).*($($tag.ClosingTag))/`${1}$($tag.Contents)`${2}/si" c:\Windows\Panther\unattend.xml   
+            perl -0777 "-i.bak" -pe "s/($($tag.OpeningTag)).*($($tag.ClosingTag))/`${1}$($tag.Contents)`${2}/si" "$($partitionLetter):\Windows\Panther\unattend.xml"   
         }
     }
     
@@ -281,42 +374,55 @@ function Process-Scripts($scripts)
     }
 }
 
-function Process-File-Copy()
+function Process-File-Copy($partitionLetter)
 {
      log " ** Processing File Copy ** " "true"
         foreach($file in $fileCopySchema.FilesAndFolders)
         {
-            if(($file.DestinationPartition -eq $currentPartition.Number) -or $partition_method -eq "standard" )
+            if($file.DestinationPartition -eq $currentPartition.Number -or $partition_method -eq "standard" -or (!$file.DestinationPartition -and (Test-Path "$($partitionLetter):\Windows")))
             {
                 $dest=$($file.DestinationFolder).Replace("/","\")
-                mkdir c:$dest 2>&1 > $null
+                mkdir "$($partitionLetter):$dest" 2>&1 > $null
                 log "Downloading $($file.FileName) To $dest" "true"
            
-                curl.exe -#Sk -H Authorization:$script:userTokenEncoded --data "guid=$($file.ModuleGuid)&fileName=$($file.FileName)" ${script:web}GetFile --connect-timeout 10 -o "c:$dest\$($file.FileName)"
+                curl.exe -#Sk -H Authorization:$script:userTokenEncoded --data "guid=$($file.ModuleGuid)&fileName=$($file.FileName)" ${script:web}GetFile --connect-timeout 10 -o "$($partitionLetter):$dest\$($file.FileName)"
 
                 if($($file.Unzip) -eq "true" -and $file.FileName.EndsWith('.zip'))
                 {
-                    Expand-Archive -Path "c:$dest\$($file.FileName)" -DestinationPath "c:$dest"
-                    rm "c:$dest\$($file.FileName)"
+                    Expand-Archive -Path "$($partitionLetter):$dest\$($file.FileName)" -DestinationPath "$($partitionLetter):$dest"
+                    rm "$($partitionLetter):$dest\$($file.FileName)"
+                }
+                if($file.IsDriver -eq "true")
+                {
+                    log "Installing Drivers" "true"
+                    if($($file.DestinationFolder -eq "/"))
+                    {
+                        #don't add drivers recursively if root drive was specified as drive destination
+                        dism /Image:"$partitionLetter": /Add-Driver /Driver:"$($partitionLetter):$dest" | tee $clientLog -Append
+                    }
+                    else
+                    {
+                        dism /Image:"$partitionLetter": /Add-Driver /Driver:"$($partitionLetter):$dest" /Recurse | tee $clientLog -Append
+                    }
                 }
             }
         }
     
 }
 
-function Change-Computer-Name()
+function Change-Computer-Name($partitionLetter)
 {
     log " ** Changing Computer Name ** " "true"
-    if(Test-Path C:\Windows\Panther\unattend.xml)
+    if(Test-Path "$($partitionLetter):\Windows\Panther\unattend.xml")
     {
         log " ** Sysprep Answer File Found. Updating Computer Name ** " "true"
-        perl -0777 "-i.bak" -pe "s/(\<ComputerName\>).*(\<\/ComputerName\>)/`${1}$computer_name`${2}/si" c:\Windows\Panther\unattend.xml
-        rm c:\Windows\Panther\unattend.xml.bak
+        perl -0777 "-i.bak" -pe "s/(\<ComputerName\>).*(\<\/ComputerName\>)/`${1}$computer_name`${2}/si" "$($partitionLetter):\Windows\Panther\unattend.xml"
+        rm "$($partitionLetter):\Windows\Panther\unattend.xml.bak"
     }
     else
     {
         log " ** Sysprep Answer File Not Found. Loading Registry Hive ** " "true"
-        reg load HKLM\CloneDeploy C:\Windows\system32\config\SYSTEM 2>&1 >> $clientLog
+        reg load HKLM\CloneDeploy "$($partitionLetter):\Windows\system32\config\SYSTEM" 2>&1 >> $clientLog
         if($?)
         {
             $private:regObj=$(Get-ItemProperty HKLM:\CloneDeploy\ControlSet001\services\Tcpip\Parameters)
@@ -357,39 +463,76 @@ function Process-Hard-Drives()
         }
 
         log "Get hd_schema:  profileId=$profile_id&clientHdNumber=$currentHdNumber&newHdSize=$($hardDrive.Size)&schemaHds=$script:imagedSchemaDrives&clientLbs=0"
-        $script:hdSchema=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id&clientHdNumber=$currentHdNumber&newHdSize=$($hardDrive.Size)&schemaHds=$script:imaged_schema_drives&clientLbs=$($hardDrive.LogicalSectorSize)" ${script:web}CheckHdRequirements --connect-timeout 10 --stderr -)
+        if($script:image_type -eq "File" -or ($script:image_type -eq "Both" -and !$script:smbSuccess) -or ($script:image_type -eq "Both" -and $script:bootType -ne "efi"))
+        {      
+            $script:hdSchema=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id&clientHdNumber=$currentHdNumber&newHdSize=$($hardDrive.Size)&schemaHds=$script:imaged_schema_drives&clientLbs=$($hardDrive.LogicalSectorSize)" ${script:web}CheckHdRequirements --connect-timeout 10 --stderr -)
        
-        log "$script:hdSchema"
-	    $script:hdSchema=$script:hdSchema | ConvertFrom-Json
-        if(!$?)
-        {
-            $Error[0].Exception.Message
-            $script:hdSchema
-            error "Could Not Parse HD Schema"
-        }
-        $script:imageHdToUse=$script:hdSchema.SchemaHdNumber
-        $script:imagePath="s:\images\$image_name\hd$script:imageHdToUse"
+            log "$script:hdSchema"
+	        $script:hdSchema=$script:hdSchema | ConvertFrom-Json
+            if(!$?)
+            {
+                $Error[0].Exception.Message
+                $script:hdSchema
+                error "Could Not Parse HD Schema"
+            }
+            $script:imageHdToUse=$script:hdSchema.SchemaHdNumber
+            $script:imagePath="s:\images\$image_name\hd$script:imageHdToUse"
         
-        if($script:hdSchema.IsValid -eq "true" -or $script:hdSchema.IsValid -eq "original" )
-        {
-            log " ...... HD Meets The Minimum Sized Required"
-        }
-        elseif($script:hdSchema.IsValid -eq  "false" )
-        {
-            log " ...... $($script:hdSchema.Message)" "true"
-            Start-Sleep 10
-            continue	
+            if($script:hdSchema.IsValid -eq "true" -or $script:hdSchema.IsValid -eq "original" )
+            {
+                log " ...... HD Meets The Minimum Sized Required"
+            }
+            elseif($script:hdSchema.IsValid -eq  "false" )
+            {
+                error "$($script:hdSchema.Message)" 
+            }
+            else
+            {
+                error "Unknown Error Occurred While Determining Minimum HD Size Required.  Check The Exception Log"
+            }
+
+	        Create-Partition-Layout
         }
         else
         {
-            error "Unknown Error Occurred While Determining Minimum HD Size Required.  Check The Exception Log"
-        }
+            $script:hdSchema=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id&clientHdNumber=$currentHdNumber&newHdSize=$($hardDrive.Size)&schemaHds=$script:imaged_schema_drives&clientLbs=$($hardDrive.LogicalSectorSize)" ${script:web}CheckHdRequirementsFfu --connect-timeout 10 --stderr -)
+       
+            log "$script:hdSchema"
+	        $script:hdSchema=$script:hdSchema | ConvertFrom-Json
+            if(!$?)
+            {
+                $Error[0].Exception.Message
+                $script:hdSchema
+                error "Could Not Parse HD Schema"
+            }
+            $script:imageHdToUse=$script:hdSchema.SchemaHdNumber
+            $script:imagePath="s:\images\$image_name\hd$script:imageHdToUse"
+        
+            if($script:hdSchema.IsValid -eq "true")
+            {
+                log " ...... HD Meets The Minimum Sized Required"
+            }
+            elseif($script:hdSchema.IsValid -eq  "false" )
+            {
+                error "$($script:hdSchema.Message)" 
+            }
+            else
+            {
+                error "Unknown Error Occurred While Determining Minimum HD Size Required.  Check The Exception Log"
+            }
 
-	    Create-Partition-Layout
+            Download-FFU
+        }
     }
 }
 
+if($script:image_type -eq "Block" -and $script:bootType -ne "efi")
+{
+  error "Block images can only be restored to EFI machines"
+}
 
+log "Current Boot Order"
+bcdedit /enum firmware | Out-File $clientLog -Append
 
 
     if($script:task -ne "multicast" -and $script:task -ne "ondmulticast")
@@ -425,7 +568,7 @@ function Process-Hard-Drives()
 
 if($direct_smb -eq "true")
 {
-    Mount-SMB
+    Mount-SMB("deploy")
 }
 
  if($file_copy -eq "True")
@@ -446,6 +589,13 @@ if($direct_smb -eq "true")
 
 Process-Hard-Drives
 
+if($script:bootType -eq "efi" -and $script:set_bootmgr -eq "True")
+{
+  #no idea why this doesn't work directly from powershell
+  cmd.exe /c "bcdedit /set {fwbootmgr} displayorder {bootmgr} /addfirst"
+}
 
+log "Updated Boot Order"
+bcdedit /enum firmware | Out-File $clientLog -Append
 
 CheckOut

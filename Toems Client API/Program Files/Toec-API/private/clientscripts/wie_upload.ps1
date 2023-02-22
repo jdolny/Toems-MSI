@@ -2,9 +2,10 @@
 
 function Create-Image-Schema()
 {
-    log " ** Creating Image Schema ** " "true"
     Write-Host
-    Start-Sleep 5
+    log " ** Creating Image Schema ** " "true"
+
+    Start-Sleep 2
     
     $hardDriveCounter=0
     $imageSchema="{`"harddrives`": [ "
@@ -92,55 +93,75 @@ function Create-Image-Schema()
    
 }
 
-function Upload-Image()
+function Upload-Image($imageType)
 {
+    Clear-Host
     $currentHdNumber=-1
 
-    if($direct_smb -eq "true")
+    if($direct_smb -eq "true" -and $script:smbSuccess)
     {
         foreach($hardDrive in $script:HardDrives)
         {
             $currentHdNumber++
             $partitionLetters = @('G','H','I','J','K','L','M','N','O','P') #win11 fix where current partition would not unmount
             $imagePath="s:\images\$image_name\hd$currentHdNumber"
-            mkdir "$imagePath" >> $clientLog
+            mkdir "$imagePath" 2>&1 >> $clientlog
 
-            foreach($partition in Get-Partition -DiskNumber $hardDrive.Number | Sort-Object PartitionNumber)
+            if($imageType -eq "Block")
             {
-                log " ** Starting Image Upload For Hard Drive $($hardDrive.Number) Partition $($partition.PartitionNumber)" "true"
-
-                $notAutoMounted=$false
-                $partitionCounter++
-                if(!$partition.DriveLetter)
+                if($hardDrive.PartitionStyle -ne "GPT")
                 {
-                    $notAutoMounted=$true
-                    Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter $partitionLetters[$partitionCounter] 2>>$clientLog
+                    error "Block images can only be used on GPT partitioned hard drives.  You must change your image type to File"
                 }
-                $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
 
-                if(!$updatedPartition.DriveLetter) { continue }
+                log " ** Starting Image Upload For Hard Drive $($hardDrive.Number)" "true"
+                
+                $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($hardDrive.Number) -direction Uploading -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded -imageType Block " -NoNewWindow -PassThru)
+                log "Dism /Capture-Ffu /ImageFile:$imagePath\disk.ffu /CaptureDrive:\\.\PhysicalDrive$($hardDrive.Number) /Name:Drive$($hardDrive.Number) /Compress:default > x:\ffu.progress"
+                Dism /Capture-Ffu /ImageFile:$imagePath\disk.ffu /CaptureDrive:\\.\PhysicalDrive$($hardDrive.Number) /Name:Drive$($hardDrive.Number) /Compress:default > x:\ffu.progress
+
+                Stop-Process $reporterProc
+            }
+            else
+            {
+
+                foreach($partition in Get-Partition -DiskNumber $hardDrive.Number | Sort-Object PartitionNumber)
+                {
+                    log " ** Starting Image Upload For Hard Drive $($hardDrive.Number) Partition $($partition.PartitionNumber)" "true"
+
+                    $notAutoMounted=$false
+                    $partitionCounter++
+                    if(!$partition.DriveLetter)
+                    {
+                        $notAutoMounted=$true
+                        Set-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber) -NewDriveLetter $partitionLetters[$partitionCounter] 2>>$clientLog
+                    }
+                    $updatedPartition=$(Get-Partition -DiskNumber $($hardDrive.Number) -PartitionNumber $($partition.PartitionNumber)) 
+
+                    if(!$updatedPartition.DriveLetter) { continue }
             
              
 	      
-                log "curl.exe  --data `"taskId=$script:taskId&partition=$($partition.PartitionNumber)`" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -"
-                curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId&partition=$($partition.PartitionNumber)" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -
+                    log "curl.exe  --data `"taskId=$script:taskId&partition=$($partition.PartitionNumber)`" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -"
+                    curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId&partition=$($partition.PartitionNumber)" ${script:web}UpdateProgressPartition  --connect-timeout 10 --stderr -
             
-                Start-Sleep 7
-                Write-Host
+                    Start-Sleep 7
+                    Write-Host
     
-                log " ...... partitionNumber: $($partition.PartitionNumber)"
+                    log " ...... partitionNumber: $($partition.PartitionNumber)"
 
-                $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($partition.PartitionNumber) -direction Uploading -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded " -NoNewWindow -PassThru)
+                    $reporterProc=$(Start-Process powershell "x:\wie_reporter.ps1 -web $script:web -taskId $script:taskId -partitionNumber $($partition.PartitionNumber) -direction Uploading -curlOptions $script:curlOptions -userTokenEncoded $script:userTokenEncoded " -NoNewWindow -PassThru)
             
-                log "wimcapture $($updatedPartition.DriveLetter):\ $imagePath\part$($partition.PartitionNumber).winpe.wim $web_wim_args --compress=fast 2>>$clientLog > x:\wim.progress"
-                wimcapture "$($updatedPartition.DriveLetter):\" "$imagePath\part$($partition.PartitionNumber).winpe.wim" $web_wim_args --compress=fast 2>>$clientLog > x:\wim.progress
+                    log "wimcapture $($updatedPartition.DriveLetter):\ $imagePath\part$($partition.PartitionNumber).winpe.wim $web_wim_args --compress=fast --pipable 2>>$clientLog > x:\wim.progress"
+                    wimcapture "$($updatedPartition.DriveLetter):\" "$imagePath\part$($partition.PartitionNumber).winpe.wim" $web_wim_args --compress=fast --pipable 2>>$clientLog > x:\wim.progress
             
-                Stop-Process $reporterProc
+                    Stop-Process $reporterProc
             
-                if($notAutoMounted)
-                {
-                    Start-Sleep 5
-                    #mountvol.exe q:\ /d
+                    if($notAutoMounted)
+                    {
+                        Start-Sleep 5
+                        #mountvol.exe q:\ /d
+                    }
                 }
             }
         }
@@ -182,15 +203,6 @@ function Upload-Image()
                 {
 	                error "Could Not Start Server Image Receiver"
 	            }
-
-                
-                $upload_server=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded  ${script:web}GetUploadServerIp  --connect-timeout 10 --stderr -)	        
-                if($upload_server -eq "0")
-                {
-	                error "Could Not Determine Upload Server Ip"
-	            }
-                
-
                 Start-Sleep 2
                 Write-Host
     
@@ -210,11 +222,12 @@ function Upload-Image()
             }
         }
     }
-
-    $imageGuid=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id" ${script:web}UpdateGuid  --connect-timeout 10 --stderr -)
-
 }
 
+if(($script:image_type -eq "Both" -or $script:image_type -eq "Block") -and $direct_smb -ne "true")
+{
+    error "Direct SMB Imaging Must Be Enabled To Create A Block Image"
+}
 
 Get-Hard-Drives("upload")
 
@@ -228,7 +241,7 @@ curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "p
 
 if($direct_smb -eq "true")
 {
-    Mount-SMB
+    Mount-SMB("upload")
     New-Item s:\images\$image_name\ -ItemType Directory 2>&1 >> $clientLog
 }
 
@@ -236,6 +249,16 @@ Create-Image-Schema
 
 if($upload_schema_only -eq "true") { Checkout }
 
-Upload-Image
+if($script:image_type -eq "Both" -and $direct_smb -eq "true")
+{
+    Upload-Image("Block")
+    Upload-Image("File")
+}
+else
+{
+    Upload-Image($script:image_type)
+}
+
+$imageGuid=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "profileId=$profile_id" ${script:web}UpdateGuid  --connect-timeout 10 --stderr -)
   
 Checkout

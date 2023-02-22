@@ -101,7 +101,7 @@ function error($message, $rebootTime)
 	} 
 }
 
-function Mount-SMB()
+function Mount-SMB($imageDirection)
 {
     log " ** Mounting SMB Share ** " "true"
 	
@@ -121,9 +121,22 @@ function Mount-SMB()
         Start-Sleep 2
 	    log -message " ...... Success" -isDisplay "true"
     }
-    else
+    elseif($imageDirection -eq "upload" -and ($script:image_type -eq "Both" -or $script:image_type -eq "Block"))
+    {
+        #When uploading block image, smb share is required, throw error if mount fails
+        error "Could Not Mount SMB Share"
+    }
+    elseif($imageDirection -eq "deploy" -and $script:image_type -eq "Block")
     {
         error "Could Not Mount SMB Share"
+    }
+    else
+    {
+        #When deploying(both or file) or upload(file), if smb mount fails, we can try to fall back to http imaging
+        #don't throw error
+        log -message " ...... Failed" -isDisplay "true"
+        log -message " ...... Trying Fallback Imaging Mode" -isDisplay "true"
+
     }
 
 	Start-Sleep 2
@@ -202,7 +215,7 @@ function Get-Hard-Drives($taskType)
     foreach($hardDrive in $script:HardDrives)
     {
         log " ** Displaying Current Partition Table On $($hardDrive.Number)"
-        Get-Partition -DiskNumber $hardDrive.Number | Out-File $clientLog -Append
+        Get-Partition -DiskNumber $hardDrive.Number -ErrorAction:silentlycontinue | Out-File $clientLog -Append
     }
     Write-Host
 }
