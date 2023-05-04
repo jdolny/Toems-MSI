@@ -179,18 +179,39 @@ if(!$taskFound)
   
     if($script:task -eq "ondmulticast")
     {
-        $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "mac=$script:mac&objectId=$script:multicastId&task=$script:task&userId=$script:userId&computerId=$script:computer_id" ${script:web}OnDemandCheckIn --connect-timeout 10 --stderr -)
+        if($script:restrictComServers)
+        {
+            $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "mac=$script:mac&objectId=$script:multicastId&task=$script:task&userId=$script:userId&computerId=$script:computer_id&comServers=${script:comServers}" ${script:web}OnDemandCheckIn --connect-timeout 10 --stderr -)
+        }
+        else
+        {
+            $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "mac=$script:mac&objectId=$script:multicastId&task=$script:task&userId=$script:userId&computerId=$script:computer_id" ${script:web}OnDemandCheckIn --connect-timeout 10 --stderr -)
+        }
     }
     else
     {
-        $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "mac=$script:mac&objectId=$script:imageProfileId&task=$script:task&userId=$script:userId&computerId=$script:computer_id" ${script:web}OnDemandCheckIn --connect-timeout 10 --stderr -)
+        if($script:restrictComServers)
+        {
+            $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "mac=$script:mac&objectId=$script:imageProfileId&task=$script:task&userId=$script:userId&computerId=$script:computer_id&comServers=${script:comServers}" ${script:web}OnDemandCheckIn --connect-timeout 10 --stderr -)
+        }
+        else
+        {
+            $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "mac=$script:mac&objectId=$script:imageProfileId&task=$script:task&userId=$script:userId&computerId=$script:computer_id" ${script:web}OnDemandCheckIn --connect-timeout 10 --stderr -)
+        }
     }
     
 }
 else
 {
     log -message " ** Verifying Active Task ** " -isDisplay "true"
-    $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId" ${script:web}CheckIn  --connect-timeout 10 --stderr -)
+    if($script:restrictComServers)
+    {
+        $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId&comServers=${script:comServers}" ${script:web}CheckIn  --connect-timeout 10 --stderr -)
+    }
+    else
+    {
+        $checkInStatus=$(curl.exe $script:curlOptions -H Authorization:$script:userTokenEncoded --data "taskId=$script:taskId" ${script:web}CheckIn  --connect-timeout 10 --stderr -)
+    }
 }
 
 $checkInStatus=$checkInStatus | ConvertFrom-Json

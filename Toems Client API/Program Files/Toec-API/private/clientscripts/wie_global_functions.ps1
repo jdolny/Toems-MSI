@@ -169,6 +169,43 @@ function Mount-SMB-Sub($smbInfo)
     }
 }
 
+function Verify-Image-Server()
+{
+  log " ** Verifying Image Server ** " "true"
+  #an image server was selected during checkin, update web to use the selected image server / com server
+  $connResult=$(curl.exe  $script:curlOptions "${image_server}Test" --connect-timeout 10 --stderr -)
+  if("$connResult" -eq "true") 
+  { 
+    $script:web=$image_server
+    log " ...... Success" "true"
+	echo 
+  }
+  else
+  {
+     log " ...... Failed. Looking For Additional Image Servers" "true"
+     $allImageServers=$(curl.exe  $script:curlOptions --data "computerId=$computer_id" "${script:web}GetOtherImageServers" --connect-timeout 10 --stderr -)
+	 
+	 if(!$? -or "$allImageServers" -eq "false" )
+     {
+	   error "Could Not Find Any Usable Image Servers"
+	 }
+     
+     foreach($imageServerUrl in $allImageServers)
+     {
+       log " ..... Connecting To ${imageServerUrl}" "true"
+       sleep 2
+       $connResult=$(curl.exe  $script:curlOptions "${imageServerUrl}clientimaging/Test" --connect-timeout 10 --stderr -)
+	   if("$connResult" -eq "true")
+       {
+         $script:web="${imageServerUrl}clientimaging/" #update web to use the image server
+	     log " ...... Success" "true"
+		 return 0
+	   }
+     }
+     error "Could Not Find Any Usable Image Servers"
+  }
+}
+
 function Get-Hard-Drives($taskType)
 {
     log " ** Looking For Hard Drive(s) **" "true"
