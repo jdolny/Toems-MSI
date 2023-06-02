@@ -10,7 +10,7 @@ REM	echo =======================================================================
 	) else (
 	echo ===============================================================================
 	echo YOU MUST RUN AS ADMINISTRATOR ELEVATED TO EXECUTE THIS SCRIPT
-	goto :StopScript
+	goto :AdminError
 	echo ===============================================================================
 	)
 	
@@ -19,12 +19,9 @@ echo Executing MakePE Validation at %MakePE%\Scripts\MakePE-Validation.cmd
 echo ===============================================================================
 	
 	set BUILDS=%MakePE%\Builds
-	set DRIVERDIR="%MakePE%\Optional\Drivers\WinPE 10 x64"
 	echo Checking MakePE Core Directories
 	if %Pass% EQU 1 (
 		rd "%BUILDS%" /S /Q
-		rd %DRIVERDIR% /S /Q
-		md %DRIVERDIR%
 		echo Creating BUILDS Directory at %BUILDS%
 		md "%BUILDS%"
 		if NOT exist "%BUILDS%\tftpboot\boot\." md "%BUILDS%\tftpboot\boot"
@@ -262,5 +259,9 @@ echo ===========================================================================
 	
 :StopScript
 	echo MakePE did not complete properly
+	exit
+
+:AdminError
+	echo MakePE did not complete properly. Must be ran as administrator.
 	pause
 	exit

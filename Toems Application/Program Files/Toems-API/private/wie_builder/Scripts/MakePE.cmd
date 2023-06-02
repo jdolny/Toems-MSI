@@ -41,7 +41,11 @@
 		
 	::	Build the ISO
 		if /I %CreateISO% EQU true call "%SCRIPTS%\MakePE-BuildISO.cmd"
-			
+	
+	:: Clean Drivers
+		set DRIVERDIR="%MakePE%\Optional\Drivers\WinPE 10 x64"
+		rd %DRIVERDIR% /S /Q
+		md %DRIVERDIR%
 		exit /b
 		
 :WIM-Cleanup
