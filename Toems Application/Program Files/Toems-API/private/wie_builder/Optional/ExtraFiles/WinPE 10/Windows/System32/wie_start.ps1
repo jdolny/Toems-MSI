@@ -1,7 +1,9 @@
 ﻿. x:\wie_menu.ps1
-Add-Content "x:\clientlog.log" "WIE Version: 1.5.0"
+Add-Content "x:\clientlog.log" "WIE Version: 1.5.4"
 
 $script:web=$(Get-Content x:\windows\system32\web.txt).Trim()
+$script:comServers=$script:web
+Add-Content "x:\clientlog.log" $script:comServers
 try
 {
     $private:uToken=$(Get-Content x:\windows\system32\uToken.txt -ErrorAction Ignore).Trim()
@@ -15,6 +17,11 @@ catch
 if(Test-Path -Path x:\windows\system32\logindebug.txt -PathType Leaf)
 {
     $login_debug=$true
+}
+
+if(Test-Path -Path x:\windows\system32\restrictcomservers.txt -PathType Leaf)
+{
+    $script:restrictComServers=$true
 }
 
 $script:curlOptions="-sSk"
@@ -40,24 +47,33 @@ function Check-Download($dlResult, $scriptName)
 function Test-Server-Conn()
 {
   clear
-  Write-Host " ** Connecting To Theopenem Com Server ** "
-  $private:testConnectionCount = 1
-  $private:sleepCount = 15
-  while($private:testConnectionCount -le 3)
+
+  foreach($webPath in ${script:web}.Split(',').Trim('/'))
   {
-    $connResult=$(curl.exe  $script:curlOptions "${script:web}Test" --connect-timeout 10 --stderr -)
-    if("$connResult" -eq "true") { break }
-    else
+    $webPath="$webPath/clientimaging/"
+    Write-Host " ** Connecting To Theopenem Com Server ${webPath} ** "
+    $private:testConnectionCount = 1
+    $private:sleepCount = 15
+    while($private:testConnectionCount -le 3)
     {
-        if($private:testConnectionCount -eq 3) { break }
-        $private:sleepCount = $private:sleepCount * $private:testConnectionCount
-        Write-Host " ** Could Not Contact Server.  Trying Again in $private:sleepCount Seconds ** "
-        Start-Sleep -s $private:sleepCount
-        
+        $connResult=$(curl.exe  $script:curlOptions "${webPath}Test" --connect-timeout 10 --stderr -)
+        if("$connResult" -eq "true") 
+        { 
+            $script:web=$webPath
+            break 
+        }
+        else
+        {
+            if($private:testConnectionCount -eq 3) { break }
+            $private:sleepCount = $private:sleepCount * $private:testConnectionCount
+            Write-Host " ** Could Not Contact Server.  Trying Again in $private:sleepCount Seconds ** "
+            Start-Sleep -s $private:sleepCount
+        }
+        $private:testConnectionCount++
     }
-    $private:testConnectionCount++
+    if("$connResult" -eq "true") { break }
   }
-  
+
   if("$connResult" -ne "true") 
   {
     clear
@@ -65,7 +81,6 @@ function Test-Server-Conn()
     
     Write-Host "Could Not Contact Theopenem Com Server.  Possible Reasons:"
     Write-Host "The Web Service Is Not Functioning."  
-    Write-Host "Try Entering ${script:web}Test In A Web Browser. "
     Write-Host "A Driver Could Not Be Found For This NIC."
     Write-Host "The Computer Did Not Receive An Ip Address."
 
