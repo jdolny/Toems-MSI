@@ -768,6 +768,7 @@ function process_hard_drives()
 
 function main()
 {
+  #echo
   log_boot_args
   
   checkin

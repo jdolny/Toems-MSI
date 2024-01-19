@@ -1078,7 +1078,7 @@ EOF
 		echo $updated_bcd | base64 -d >>/tmp/updatedbcd
         #log " ** Updated BCD Is ** "
         #cat /tmp/updatedbcd >> $CLIENT_LOG
-		
+		#echo
 		#cp -R /mnt/windows/Windows/Boot/EFI/* /mnt/bcd/EFI/Microsoft/Boot 2>> $CLIENT_LOG
 		reged -I -C /mnt/bcd/EFI/Microsoft/Boot/BCD . /tmp/updatedbcd &>/dev/null
 		ms-sys -7 -f $hard_drive
