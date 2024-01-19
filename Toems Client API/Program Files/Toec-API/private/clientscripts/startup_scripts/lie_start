@@ -41,13 +41,13 @@ function start_network()
 	  echo "$cd_net_dns" >> /etc/resolv.conf
 	  ifdown $net_if
 	  ifup $net_if
-	  sleep 5
+	  sleep $display_sleep_time
 	
 	#dhcp
 	else
 	  ip link set $net_if up
 	  for timeout in 15 60; do
-	    udhcpc -i $net_if -t 2 -T $timeout -n
+	    udhcpc -q -i $net_if -t 2 -T $timeout -n
 	    if [ "$?" = "0" ]; then
 	      link_up="true"
 	      break;
@@ -145,7 +145,7 @@ function assign_static_ip()
 	
 	ifdown $net_if
 	ifup $net_if
-	sleep 5
+	sleep $display_sleep_time
 	
 	export mac=$(cat /sys/class/net/$net_if/address)
 	clientIP=$(ifconfig | grep $net_if -A2 | grep 'inet addr:'| grep -v '127.0.0.1' | cut -d: -f2 | awk '{ print $1}')
@@ -380,7 +380,7 @@ function main()
 	
   echo " ...... Complete"
   echo
-  sleep 2
+  sleep $display_sleep_time
 
   if [ "$task" = "deploy" ] || [ "$task" = "multicast" ] || [ "$task" = "modelmatchdeploy" ]; then	
 	  /bin/lie_deploy

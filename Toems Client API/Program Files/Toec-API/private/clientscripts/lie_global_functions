@@ -64,7 +64,7 @@ function checkin()
 		if [ "`parse_json "$checkInStatus" .Result`" != "true" ]; then
 			error "`parse_json "$checkInStatus" .Message`"
 		else
-			sleep 1
+			sleep $display_sleep_time
 			for arg in "`parse_json "$checkInStatus" .TaskArguments`"; do case "$arg" in *=*) eval "$arg"; log "$arg"; esac; done
 			
 			if [ "$(parse_json "$checkInStatus" .ImageEnvironment)" != "linux" ] && [ "$(parse_json "$checkInStatus" .ImageEnvironment)" != "" ]; then
@@ -103,7 +103,7 @@ function checkin()
 	   $curlAuth --data "taskId=$task_id" "${web}UpdateStatusInProgress" $curlEnd
 	fi
 	
-	sleep 2
+	sleep $display_sleep_time
 }
 
 function checkout()
@@ -111,7 +111,7 @@ function checkout()
 	echo
 	log " ** Closing Active Task ** " "display"
 	cd /
-	sleep 10
+	sleep $display_sleep_time
 	umount /storage &> /dev/null
 	
 	cat /tmp/clientlog.log | grep -v "percent completed" > /tmp/cleanedlog.log
@@ -133,7 +133,7 @@ function checkout()
 		
 	$curlAuth -F computerId="$(echo -n $computer_id | base64)" -F logContents="$(cat /tmp/cleanedlog.log | base64)"  -F subType="$(echo -n $task | base64)"  -F mac="$(echo -n $mac | base64)" "${web}UploadLog" $curlEnd
 		
-	sleep 1;
+	sleep $display_sleep_time
 	
 	if [ "$task_completed_action" = "Power Off" ]; then
 		poweroff -f;
@@ -197,7 +197,7 @@ function expand_volume()
 	if [ "$filesystem" = "ext2" ] || [ "$filesystem" = "ext3" ] || [ "$filesystem" = "ext4" ]; then
 		log " ** Expanding EXT Volume On $1 ** " "display"
 		partprobe &>/dev/null;
-		sleep 5
+		sleep $display_sleep_time
 
 		resize2fs $1 2>>$CLIENT_LOG
 		
@@ -212,7 +212,7 @@ function expand_volume()
 	elif [ "$filesystem" = "xfs" ]; then
 	  log " ** Expanding XFS Volume On $1 ** " "display"
 	  partprobe &>/dev/null;
-	  sleep 5
+	  sleep $display_sleep_time
 
 	  mkdir /mnt/xfs &>/dev/null
 	  mount $1 /mnt/xfs
@@ -238,7 +238,7 @@ function expand_volume()
 		log " ** Expanding NTFS Volume on $1 ** " "display"
 
 		partprobe &>/dev/null;
-		sleep 5
+		sleep $display_sleep_time
 			
 		#Found That expanding all the way sometimes corrupted the filesystem
 		deviceSize=$(( $deviceSize - 10485760 )) #Don't expand too far
@@ -327,7 +327,7 @@ function get_hard_drives()
 	if [ "$hard_drive_count" = "0" ]; then
 		error "Could Not Find A Hard Drive Attached To This Computer.  Try A Different Kernel."
 	fi
-	sleep 2
+	sleep $display_sleep_time
 	echo
 }
 
@@ -364,7 +364,7 @@ function process_scripts()
   for script_id in $scripts; do
     $curlAuth --data "scriptId=$script_id" "${web}GetCustomScript" $curlEnd > /tmp/custom_script
 	log " ** Running Custom Script With Id $script_id ** " "display"
-	sleep 5
+	sleep $display_sleep_time
 	#source script in sub shell so the values of the core script do not get overwritten
 	( . /tmp/custom_script )
   done
@@ -375,7 +375,7 @@ function process_sysprep_tags()
   echo
   local partition="$1"
   log " ** Processing Sysprep Tags On $partition ** " "display"
-  sleep 5
+  sleep $display_sleep_time
   mkdir /mnt/ntfs &> /dev/null	
   umount /mnt/ntfs
   ntfs-3g -o force,rw,remove_hiberfile $partition /mnt/ntfs &>/dev/null
@@ -418,7 +418,7 @@ function process_file_copy()
   local array_index=-1
   local destination
    log " ** Processing File Copy ** " "display"
-   sleep 5
+   sleep $display_sleep_time
    if [ "$standard_partition_type" = "legacy" ]; then
 	  destination=${hard_drive}${partition_prefix}2
 	elif [ "$standard_partition_type" = "efi" ]; then
@@ -525,7 +525,7 @@ function verify_image_server()
 	 
 	 for image_server_url in $all_image_servers; do
 	   log " ..... Connecting To ${image_server_url}" "display"
-       sleep 2
+       sleep $display_sleep_time
 	   imageServerStatus=$($curlAuth "${image_server_url}clientimaging/Test" $curlEnd)
 	   if [ "$imageServerStatus" = "true" ]; then
          export web="${image_server_url}clientimaging/" #update web to use the image server
@@ -559,7 +559,7 @@ function mount_smb()
 	fi
 	
 	echo
-	sleep 2
+	sleep $display_sleep_time
 }
 
 function mount_smb_sub()

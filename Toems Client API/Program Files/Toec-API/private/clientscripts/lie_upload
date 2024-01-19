@@ -88,7 +88,7 @@ function save_mbr_gpt()
    
   
   echo
-  sleep 5
+  sleep $display_sleep_time
 }
 
 
@@ -241,7 +241,7 @@ function create_image_schema()
   clear_and_move_down
   log " ** Creating Image Schema ** " "display"
   echo
-  sleep 5
+  sleep $display_sleep_time
   
   #Only used on EFI systems.
   mount -t efivarfs none /sys/firmware/efi/efivars &>>$CLIENT_LOG
@@ -519,7 +519,7 @@ function create_image_schema()
   log " ...... image_schema: $image_schema"  
   log " ...... Complete" "display"
   echo
-  sleep 2 
+  sleep $display_sleep_time 
   
   if [ "$direct_smb" = "true" ]; then
     echo $image_schema > /storage/images/$image_name/schema
@@ -589,7 +589,7 @@ function upload_image()
 
 	$curlAuth --data "taskId=$task_id&partition=$partition" "${web}UpdateProgressPartition" $curlEnd
     
-    sleep 7
+    sleep $display_sleep_time
     echo
     
     if [ "$upload_type" = "lvm" ]; then
@@ -618,7 +618,7 @@ function upload_image()
       wim_arguments=" --unix-data $web_wim_args"
     elif [ "$filesystem_type" = "swap" ]; then
       log " ...... $partition Is A Swap Partition.  Skipping." "display"
-      sleep 2
+      sleep $display_sleep_time
       continue  
     else
       if [ "$upload_type" = "physical" ]; then
@@ -629,7 +629,7 @@ function upload_image()
           if [ "$skip_shrink_lvm" != "true" ]; then
             log " ...... $partition Is An LVM Physical Partition.  Skipping." "display"
             log " ...... Logical Volumes Will Be Uploaded Last." "display"
-            sleep 5
+            sleep $display_sleep_time
             continue
           fi
         fi

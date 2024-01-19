@@ -231,7 +231,7 @@ function download_image()
 
   $curlAuth --data "taskId=$task_id&partition=$destination" "${web}UpdateProgressPartition" $curlEnd
   
-  sleep 7
+  sleep $display_sleep_time
   echo
 
   if [ "$direct_smb" = "true" ]; then
@@ -433,7 +433,7 @@ eof
   log " ...... Complete" "display"
   echo 
   partprobe &>/dev/null
-  sleep 2
+  sleep $display_sleep_time
 }
 
 function create_partition_layout()
@@ -453,7 +453,7 @@ function create_partition_layout()
     log " ...... HD Meets The Minimum Sized Required"		
   elif [ "$(parse_json "$hd_schema" .IsValid)" = "false" ]; then
     log " ...... $(parse_json "$hd_schema" .Message)" "display"
-    sleep 10
+    sleep $display_sleep_time
     continue		
   elif [ "$(parse_json "$hd_schema" .IsValid)" = "original" ]; then
     log " ...... HD Matches Original Size Of Image"
